@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "streamfetch"
+version = "0.1.0"
+description = "A local Streamlit GUI for downloading permitted YouTube media with yt-dlp"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "mxweir" }]
+keywords = ["streamlit", "yt-dlp", "youtube", "downloader", "gui"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "streamlit>=1.66,<2",
+  "yt-dlp[default]>=2026.8.19",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<10",
+  "pytest-cov>=6,<8",
+  "ruff>=0.14,<1",
+]
+
+[project.urls]
+Homepage = "https://github.com/mxweir/streamlit-media-downloader"
+Issues = "https://github.com/mxweir/streamlit-media-downloader/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/streamfetch"]
+
+[tool.pytest.ini_options]
+addopts = "-q --cov=streamfetch --cov-report=term-missing"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
