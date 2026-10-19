@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/mxweir/streamlit-media-downloader/actions/workflows/ci.yml/badge.svg)](https://github.com/mxweir/streamlit-media-downloader/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 
 StreamFetch is a local Streamlit interface for downloading YouTube media with
 [`yt-dlp`](https://github.com/yt-dlp/yt-dlp). It supports individual videos,
@@ -30,7 +30,7 @@ metadata, thumbnails, subtitles, browser cookies, and duplicate protection.
 
 ## Requirements
 
-- Python 3.10 or newer
+- Python 3.11 or newer
 - [FFmpeg](https://ffmpeg.org/download.html) available on `PATH`
 - A JavaScript runtime supported by yt-dlp may be needed for some YouTube
   formats. Keep yt-dlp current and follow its installation documentation.
