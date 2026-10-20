@@ -1,79 +1,114 @@
-# StreamFetch
+<p align="center">
+  <img src="docs/assets/streamfetch-mark.svg" width="112" alt="StreamFetch logo">
+</p>
 
-[![CI](https://github.com/mxweir/streamlit-media-downloader/actions/workflows/ci.yml/badge.svg)](https://github.com/mxweir/streamlit-media-downloader/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
+<h1 align="center">StreamFetch</h1>
 
-StreamFetch is a local Streamlit interface for downloading YouTube and
-SoundCloud media with [`yt-dlp`](https://github.com/yt-dlp/yt-dlp). It supports
-YouTube videos, playlists, and channels as well as SoundCloud tracks, sets, and
-profiles. Format and quality selection, metadata, thumbnails, subtitles,
-browser cookies, and duplicate protection are built in.
+<p align="center">
+  <strong>Download. Organize. Play.</strong><br>
+  A private, local-first media workspace for permitted YouTube and SoundCloud downloads.
+</p>
 
-The visual direction is inspired by Refero's
-[Slush style reference](https://styles.refero.design/style/8b6b547f-a357-4f1b-9842-4579c62dd42b):
-pastel paper surfaces, bold display type, sticker colors, and black outlined controls.
+<p align="center">
+  <a href="https://github.com/mxweir/streamlit-media-downloader/actions/workflows/ci.yml"><img src="https://github.com/mxweir/streamlit-media-downloader/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/mxweir/streamlit-media-downloader/releases/latest"><img src="https://img.shields.io/github/v/release/mxweir/streamlit-media-downloader?display_name=tag&sort=semver&color=8b7cff" alt="Latest release"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-ffcf4a.svg" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <a href="#quick-start"><strong>Quick start</strong></a> ·
+  <a href="#what-you-get"><strong>Features</strong></a> ·
+  <a href="CHANGELOG.md"><strong>Changelog</strong></a> ·
+  <a href="CONTRIBUTING.md"><strong>Contribute</strong></a>
+</p>
+
+<p align="center">
+  <img src="docs/assets/product-tour.gif" width="760" alt="StreamFetch product tour showing downloads, the media library, and the floating player">
+</p>
+
+StreamFetch wraps [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) in a focused
+Streamlit interface. Download permitted video or audio, keep it in a searchable
+local library, and play it without sending your collection to a cloud service.
 
 > [!IMPORTANT]
 > Download only media you created, media in the public domain, or media you have
-> permission to download. You are responsible for respecting copyright,
-> each platform's terms, and the laws that apply to you. This project does not
-> bypass DRM and is not affiliated with YouTube, Google, or SoundCloud.
+> permission to download. You are responsible for copyright, platform terms,
+> and applicable law. StreamFetch does not bypass DRM and is not affiliated with
+> YouTube, Google, or SoundCloud.
 
-## Features
+## Why StreamFetch?
 
-- Bold pastel interface with outlined cards, pill controls, and responsive layout
-- Premium desktop-style app shell with a responsive library home screen
-- Floating mini-player with expandable queue, shuffle, repeat, and transition controls
-- Persistent local media library backed by a rebuildable SQLite index
-- Folder scanning with metadata, embedded cover art, search, filters, and sorting
-- Library statistics for audio, video, artists, and storage use
-- Custom continuous audio/video player with persistent current-item state
-- Automatic queue advancement with next-item preloading
-- Seek, volume, previous/next, favorite, and keyboard controls
-- Smart queue with play-next, shuffle, repeat, drag-to-reorder, and collection playback
-- Configurable soft audio transitions and saved playback positions
-- Favorites, custom playlists, and local play history
-- Artist and album pages plus recently added, most played, rated, and unplayed views
-- Editable local titles, artists, albums, star ratings, and tags
-- Exact duplicate detection and recursive local-folder import
-- Video output as MP4, MKV, or WebM
-- Audio output as MP3, M4A, Opus, FLAC, or WAV
-- Configurable video resolution and audio quality
-- Parallel background download jobs with live speed and ETA
-- Pause, resume, and retry controls using partial-download continuation
-- Fragment concurrency, bandwidth limits, clip ranges, chapter splitting, and SponsorBlock
-- YouTube videos, playlists, multiple URLs, and complete channel/tab URLs
-- SoundCloud tracks, sets/playlists, profiles, and share links
-- Mixed YouTube and SoundCloud lists in audio mode
-- Optional metadata, thumbnails, and embedded subtitles
-- Configurable playlist/channel safety limit (50 items by default)
-- Download archive that prevents accidental duplicate downloads
-- Optional local Chrome, Firefox, Edge, Safari, or Brave cookies
-- Source preview and live progress in the browser
-- Cross-platform filename normalization
+| Local by design | More than a downloader | Built for real collections |
+| --- | --- | --- |
+| Media, metadata, favorites, playlists, and history stay on your device. | A persistent library and player turn downloads into a usable media workspace. | Search, filters, cover art, editable metadata, duplicate detection, and imports are included. |
 
-## Requirements
+## See it in action
 
-- Python 3.11 or newer
-- [FFmpeg](https://ffmpeg.org/download.html) available on `PATH`
-- A JavaScript runtime supported by yt-dlp may be needed for some YouTube
-  formats. Keep yt-dlp current and follow its installation documentation.
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/download-studio.png" alt="StreamFetch download studio"></td>
+    <td width="50%"><img src="docs/assets/library-home.png" alt="StreamFetch local media library"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Download studio</strong><br><sub>YouTube and SoundCloud · video, audio, playlists, channels, sets, and profiles</sub></td>
+    <td align="center"><strong>Local library</strong><br><sub>Embedded artwork · search · filters · smart collections</sub></td>
+  </tr>
+</table>
 
-Install FFmpeg:
+<p align="center">
+  <img src="docs/assets/player-queue.png" width="820" alt="Expanded StreamFetch player with playback queue">
+  <br>
+  <strong>Floating player and smart queue</strong><br>
+  <sub>Continuous playback · drag to reorder · shuffle · repeat · crossfade · saved position</sub>
+</p>
+
+## What you get
+
+### Download studio
+
+- YouTube videos, playlists, channel tabs, and multiple URLs
+- SoundCloud tracks, sets, playlists, profiles, and share links
+- Video output as MP4, MKV, or WebM; audio as MP3, M4A, Opus, FLAC, or WAV
+- Resolution and audio-quality controls, metadata, thumbnails, and subtitles
+- Parallel background jobs with live progress, speed, ETA, pause, resume, and retry
+- Collection safety limits, bandwidth limits, fragment concurrency, clip ranges,
+  chapter splitting, SponsorBlock, and optional browser cookies
+- Download archive and cross-platform filename normalization
+
+### Media library
+
+- Rebuildable SQLite index for MP3, M4A, Opus, Ogg, FLAC, WAV, MP4, MKV, and WebM
+- Embedded metadata and cover-art extraction with local search, filters, and sorting
+- Favorites, custom playlists, history, ratings, tags, and editable display metadata
+- Artist and album pages plus recently added, most played, highly rated, and unplayed views
+- Recursive folder import and exact duplicate detection with SHA-256 confirmation
+
+### Player
+
+- Floating mini-player that becomes a full-width bottom bar on narrow screens
+- Persistent current item, queue, playback position, volume, repeat, and transition settings
+- Automatic queue advancement and next-item preloading across audio and video
+- Previous/next, seek, shuffle, play-next, clear, remove, and drag-to-reorder controls
+- Keyboard shortcuts: <kbd>Space</kbd> play/pause, <kbd>N</kbd> next,
+  <kbd>P</kbd> previous, and arrow keys to seek five seconds
+
+## Quick start
+
+### 1. Install FFmpeg
 
 ```bash
 # macOS
 brew install ffmpeg
 
-# Ubuntu/Debian
+# Ubuntu / Debian
 sudo apt update && sudo apt install ffmpeg
 
-# Windows (winget)
+# Windows
 winget install Gyan.FFmpeg
 ```
 
-## Local installation
+### 2. Install StreamFetch
 
 ```bash
 git clone https://github.com/mxweir/streamlit-media-downloader.git
@@ -82,66 +117,21 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 python -m pip install --upgrade pip
 pip install -e .
+```
+
+### 3. Run it
+
+```bash
 streamlit run app.py
 ```
 
-Streamlit opens `http://localhost:8501`. Paste one YouTube or SoundCloud URL per
-line, choose the output settings, confirm that you have permission, and start
-the download. SoundCloud sources support audio output; YouTube supports both
-video and audio. Files are stored in `downloads/` by default and organized by
-uploader and collection.
+Open `http://localhost:8501`, paste one permitted URL per line, choose the
+format, confirm permission, and start the download. Files are saved to
+`downloads/` by default and organized by uploader and collection.
 
-## Local media library
-
-Select **Library** at the top of the app to scan and browse a local media
-folder. StreamFetch indexes MP3, M4A, Opus, Ogg, FLAC, WAV, MP4, MKV, and WebM
-files. The index lives in `.streamfetch/library.db` inside the selected folder;
-it contains only rebuildable metadata and can be recreated from the media files
-at any time.
-
-Use **Refresh library** after adding, moving, or deleting files. The library
-extracts embedded titles, artists, albums, durations, and artwork where the file
-format provides them. Search and filtering happen locally and no library data is
-uploaded.
-
-Select any library item to open it in the continuous player. The next queued
-item is preloaded and starts automatically when the current item ends, including
-audio-to-video transitions. The player includes seeking, volume, favorites,
-previous/next navigation, and keyboard controls: **Space** toggles playback,
-**N** advances, **P** goes back, and the arrow keys seek by five seconds.
-Queue entries can be reordered directly in the player. Repeat and transition
-settings, queue order, and paused playback positions persist in the library.
-
-The compact player stays docked at the lower-right edge of the browser so music
-keeps playing while navigating the library or download studio. Expand it for
-volume, repeat, crossfade, shuffle, clear, remove, and drag-to-reorder queue
-controls. On narrow screens it becomes a full-width bottom bar.
-
-The current item, queue, favorites, playlists, and the latest 5,000 play actions
-are stored locally in the same SQLite database. Removing a missing media file
-during a refresh also removes its associated library state; StreamFetch never
-deletes the media file itself. Browser autoplay rules can still require one
-manual press before the first playback in a new browser session.
-
-Open **Discover** for artist and album pages or dynamic smart collections:
-recently added, most played, highly rated, and unplayed. Each media card has a
-local metadata editor for display title, artist, album, a zero-to-five-star
-rating, and comma-separated tags. These edits stay in the library database and
-do not rewrite the media file. Search includes the edited fields and tags.
-
-The import tool recursively copies supported files into `Imported/` without
-altering the source folder. The duplicate scanner first groups files by size,
-then confirms exact matches with SHA-256; it reports paths for review and never
-deletes files.
-
-## Background downloads
-
-Each submitted URL becomes an independent background job. Two sources can run
-in parallel while the interface remains usable. Active jobs report progress,
-speed, ETA, and the current filename. Pausing stops after the current fragment;
-resuming uses yt-dlp's partial-download continuation. Advanced settings also
-support bandwidth limits, concurrent fragments, time ranges, chapter splitting,
-and optional SponsorBlock removal for supported YouTube sources.
+> [!TIP]
+> Keep `yt-dlp` current. Some YouTube formats can also require a JavaScript
+> runtime supported by yt-dlp.
 
 ## Docker
 
@@ -150,9 +140,21 @@ docker build -t streamfetch .
 docker run --rm -p 8501:8501 -v "$PWD/downloads:/app/downloads" streamfetch
 ```
 
-Browser-cookie extraction is intended for the native local installation and is
-not available inside the default container unless a browser profile is mounted
-explicitly.
+Browser-cookie extraction is intended for a native local installation. It is
+not available in the default container unless a browser profile is explicitly
+mounted.
+
+## How local storage works
+
+Selecting **Library** indexes the chosen media directory in
+`.streamfetch/library.db`. The database contains only rebuildable metadata and
+player state; the original media remains authoritative. A refresh notices
+added, changed, moved, or missing files. StreamFetch never deletes your media
+when cleaning the index or reviewing duplicates.
+
+Metadata edits in the app affect the local index, not the underlying media
+file. Favorites, playlists, the queue, paused positions, and up to 5,000 recent
+play actions live in the same local database.
 
 ## Development
 
@@ -162,25 +164,36 @@ ruff check .
 pytest
 ```
 
-The code is split into a Streamlit UI and a small `streamfetch` core package.
-Format selection and yt-dlp options are unit-tested without contacting either
-platform.
+The project supports Python 3.11, 3.12, and 3.13. Downloader option generation
+is unit-tested without contacting YouTube or SoundCloud.
 
-## Deployment warning
+Release notes follow a visual, repeatable format. See [CHANGELOG.md](CHANGELOG.md)
+for the history and [docs/RELEASING.md](docs/RELEASING.md) for the screenshot and
+release checklist.
 
-StreamFetch is designed as a trusted, single-user local application. A remote
-deployment downloads files onto the server, may expose browser cookies or local
-paths, and can consume significant bandwidth and disk space. Do not expose it
-to the public internet without authentication, quotas, isolation, and storage
-controls.
+## Deployment and security
+
+StreamFetch is designed as a trusted, single-user local application. A public
+deployment can expose local paths or browser cookies and consume substantial
+bandwidth and storage. Do not expose it to the internet without authentication,
+quotas, isolation, and storage controls. Please report vulnerabilities through
+[SECURITY.md](SECURITY.md).
 
 ## Roadmap
 
-- Optional waveform and audio spectrum visualizations
-- Persist background jobs across full app restarts
-- Per-item selection before downloading a playlist
-- Optional desktop packaging
-- Internationalized interface
+- Persistent background jobs across full app restarts
+- Per-item selection before downloading a playlist or channel
+- Optional waveform and audio-spectrum visualizations
+- Desktop packaging and internationalization
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and
-[SECURITY.md](SECURITY.md).
+## Contributing
+
+Issues and focused pull requests are welcome. Start with
+[CONTRIBUTING.md](CONTRIBUTING.md), check the
+[open issues](https://github.com/mxweir/streamlit-media-downloader/issues), and
+keep examples free of private media, browser data, credentials, and personal
+paths.
+
+<p align="center">
+  <sub>Built with Streamlit, yt-dlp, Mutagen, SQLite, and a local-first mindset.</sub>
+</p>
