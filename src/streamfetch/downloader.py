@@ -7,7 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .config import build_ydl_options, new_media_files, validate_youtube_url
+from .config import build_ydl_options, new_media_files, validate_media_url
 from .models import DownloadRequest, DownloadResult, PreviewEntry, ProgressEvent, SourcePreview
 
 ProgressCallback = Callable[[ProgressEvent], None]
@@ -19,7 +19,7 @@ class DownloaderError(RuntimeError):
 
 class Downloader:
     def inspect(self, url: str, limit: int = 12) -> SourcePreview:
-        validate_youtube_url(url)
+        validate_media_url(url)
         yt_dlp = _import_yt_dlp()
         options = {
             "quiet": True,

@@ -7,7 +7,13 @@ from pathlib import Path
 
 import streamlit as st
 
-from streamfetch.config import ValidationError, human_size, parse_subtitle_languages, parse_urls
+from streamfetch.config import (
+    ValidationError,
+    human_size,
+    parse_subtitle_languages,
+    parse_urls,
+    validate_request,
+)
 from streamfetch.downloader import Downloader, DownloaderError
 from streamfetch.models import DownloadRequest, MediaType, ProgressEvent
 
@@ -16,7 +22,7 @@ st.set_page_config(page_title="StreamFetch", page_icon="⬇️", layout="wide")
 
 def render_header() -> None:
     st.title("⬇️ StreamFetch")
-    st.caption("A local, open-source GUI for permitted YouTube downloads")
+    st.caption("A local, open-source GUI for permitted YouTube and SoundCloud downloads")
     st.info(
         "Only download media you created, that is in the public domain, or that you have "
         "permission to download. Respect copyright, platform terms, and local law.",
@@ -75,7 +81,7 @@ def build_request(urls: tuple[str, ...]) -> DownloadRequest:
     embed_thumbnail = st.session_state.embed_thumbnail and not (
         media_type is MediaType.AUDIO and container == "wav"
     )
-    return DownloadRequest(
+    request = DownloadRequest(
         urls=urls,
         output_dir=Path(st.session_state.output_dir),
         media_type=media_type,
@@ -89,6 +95,8 @@ def build_request(urls: tuple[str, ...]) -> DownloadRequest:
         subtitle_languages=parse_subtitle_languages(st.session_state.subtitle_languages),
         cookie_browser=cookie_browser,
     )
+    validate_request(request)
+    return request
 
 
 def render_sidebar() -> None:
@@ -115,8 +123,12 @@ def render_sidebar() -> None:
             )
 
         st.divider()
-        st.checkbox("Process playlists and channels", value=True, key="allow_playlists")
-        st.checkbox("Limit playlist/channel size", value=True, key="use_limit")
+        st.checkbox(
+            "Process playlists, channels, sets, and profiles",
+            value=True,
+            key="allow_playlists",
+        )
+        st.checkbox("Limit collection size", value=True, key="use_limit")
         st.number_input(
             "Maximum items per source",
             min_value=1,
@@ -161,15 +173,18 @@ def main() -> None:
     default_dir = str((Path.cwd() / "downloads").resolve())
     st.text_input("Output directory", value=default_dir, key="output_dir")
     raw_urls = st.text_area(
-        "YouTube URLs",
+        "YouTube or SoundCloud URLs",
         height=150,
         placeholder=(
             "One URL per line:\n"
             "https://www.youtube.com/watch?v=...\n"
             "https://www.youtube.com/playlist?list=...\n"
-            "https://www.youtube.com/@channel/videos"
+            "https://soundcloud.com/artist/track\n"
+            "https://soundcloud.com/artist/sets/collection"
         ),
     )
+    if "soundcloud.com" in raw_urls.lower() or "snd.sc/" in raw_urls.lower():
+        st.info("SoundCloud sources are audio-only. Select **Audio** in the sidebar.")
     accepted = st.checkbox(
         "I have permission to download these items and accept responsibility for their use."
     )

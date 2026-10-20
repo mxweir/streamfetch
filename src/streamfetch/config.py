@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 
 from .models import DownloadRequest, MediaType
@@ -20,6 +21,14 @@ YOUTUBE_HOSTS = {
     "www.youtube-nocookie.com",
 }
 
+SOUNDCLOUD_HOSTS = {
+    "soundcloud.com",
+    "on.soundcloud.com",
+    "snd.sc",
+}
+
+MediaSource = Literal["youtube", "soundcloud"]
+
 VIDEO_CONTAINERS = {"mp4", "mkv", "webm"}
 AUDIO_CONTAINERS = {"mp3", "m4a", "opus", "flac", "wav"}
 VIDEO_HEIGHTS = {"best": None, "2160p": 2160, "1440p": 1440, "1080p": 1080,
@@ -31,20 +40,21 @@ class ValidationError(ValueError):
 
 
 def parse_urls(raw: str) -> tuple[str, ...]:
-    """Parse, validate, and de-duplicate newline-separated YouTube URLs."""
+    """Parse, validate, and de-duplicate newline-separated media URLs."""
     values = [line.strip() for line in raw.splitlines() if line.strip()]
     if not values:
-        raise ValidationError("Add at least one YouTube URL.")
+        raise ValidationError("Add at least one YouTube or SoundCloud URL.")
 
     urls: list[str] = []
     for value in values:
-        validate_youtube_url(value)
+        validate_media_url(value)
         if value not in urls:
             urls.append(value)
     return tuple(urls)
 
 
-def validate_youtube_url(url: str) -> None:
+def detect_source(url: str) -> MediaSource:
+    """Validate a URL and return the supported media platform it belongs to."""
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValidationError(f"Not a valid HTTP(S) URL: {url}")
@@ -56,8 +66,21 @@ def validate_youtube_url(url: str) -> None:
         address = None
     if address and (address.is_private or address.is_loopback or address.is_link_local):
         raise ValidationError("Local and private network addresses are not allowed.")
-    if hostname not in YOUTUBE_HOSTS and not hostname.endswith(".youtube.com"):
-        raise ValidationError(f"Only YouTube URLs are supported in this release: {url}")
+    if hostname in YOUTUBE_HOSTS or hostname.endswith(".youtube.com"):
+        return "youtube"
+    if hostname in SOUNDCLOUD_HOSTS or hostname.endswith(".soundcloud.com"):
+        return "soundcloud"
+    raise ValidationError(f"Only YouTube and SoundCloud URLs are supported: {url}")
+
+
+def validate_media_url(url: str) -> None:
+    detect_source(url)
+
+
+def validate_youtube_url(url: str) -> None:
+    """Validate that a URL belongs specifically to YouTube."""
+    if detect_source(url) != "youtube":
+        raise ValidationError(f"Only YouTube URLs are supported here: {url}")
 
 
 def parse_subtitle_languages(raw: str) -> tuple[str, ...]:
@@ -70,7 +93,7 @@ def build_ydl_options(
     progress_hook: Callable[[dict], None] | None = None,
 ) -> dict:
     """Translate a validated request into yt-dlp Python API options."""
-    _validate_request(request)
+    validate_request(request)
     output_dir = Path(request.output_dir).expanduser().resolve()
 
     options: dict = {
@@ -148,11 +171,12 @@ def _video_format_selector(container: str, quality: str) -> str:
     return f"bv*{height_filter}+ba/b{height_filter}/best"
 
 
-def _validate_request(request: DownloadRequest) -> None:
+def validate_request(request: DownloadRequest) -> None:
     if not request.urls:
         raise ValidationError("At least one URL is required.")
-    for url in request.urls:
-        validate_youtube_url(url)
+    sources = {detect_source(url) for url in request.urls}
+    if "soundcloud" in sources and request.media_type is MediaType.VIDEO:
+        raise ValidationError("SoundCloud supports audio downloads only. Select Audio.")
     allowed = AUDIO_CONTAINERS if request.media_type is MediaType.AUDIO else VIDEO_CONTAINERS
     if request.container not in allowed:
         raise ValidationError(f"Unsupported {request.media_type.value} format: {request.container}")
