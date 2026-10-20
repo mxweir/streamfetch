@@ -56,7 +56,16 @@ class Downloader:
                 downloaded = data.get("downloaded_bytes", 0)
                 total = data.get("total_bytes") or data.get("total_bytes_estimate")
                 progress = min(downloaded / total, 1.0) if total else None
-                callback(ProgressEvent(status, "Downloading", progress, filename))
+                callback(
+                    ProgressEvent(
+                        status,
+                        "Downloading",
+                        progress,
+                        filename,
+                        data.get("speed"),
+                        data.get("eta"),
+                    )
+                )
             elif status == "finished":
                 callback(
                     ProgressEvent(status, "Download finished; processing media", 1.0, filename)

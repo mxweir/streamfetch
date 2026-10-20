@@ -19,8 +19,9 @@ from streamfetch.config import (
     validate_request,
 )
 from streamfetch.downloader import Downloader, DownloaderError
+from streamfetch.jobs import DownloadJobManager, JobStatus
 from streamfetch.library import MediaItem, MediaLibrary, Playlist
-from streamfetch.models import DownloadRequest, MediaType, ProgressEvent
+from streamfetch.models import DownloadRequest, MediaType
 from streamfetch.player import build_player_data, render_continuous_player
 from streamfetch.theme import (
     APP_CSS,
@@ -98,6 +99,11 @@ def build_request(urls: tuple[str, ...]) -> DownloadRequest:
     embed_thumbnail = st.session_state.embed_thumbnail and not (
         media_type is MediaType.AUDIO and container == "wav"
     )
+    if (
+        st.session_state.use_clip_range
+        and st.session_state.clip_end <= st.session_state.clip_start
+    ):
+        raise ValidationError("The clip end must be after its start.")
     request = DownloadRequest(
         urls=urls,
         output_dir=Path(st.session_state.output_dir),
@@ -111,6 +117,19 @@ def build_request(urls: tuple[str, ...]) -> DownloadRequest:
         embed_subtitles=st.session_state.embed_subtitles,
         subtitle_languages=parse_subtitle_languages(st.session_state.subtitle_languages),
         cookie_browser=cookie_browser,
+        concurrent_fragments=st.session_state.concurrent_fragments,
+        rate_limit=(
+            int(st.session_state.rate_limit_mbps * 1024 * 1024)
+            if st.session_state.use_rate_limit
+            else None
+        ),
+        download_sections=(
+            (f"{st.session_state.clip_start}-{st.session_state.clip_end}",)
+            if st.session_state.use_clip_range
+            else ()
+        ),
+        split_chapters=st.session_state.split_chapters,
+        sponsorblock_remove=tuple(st.session_state.sponsorblock_remove),
     )
     validate_request(request)
     return request
@@ -181,6 +200,46 @@ def render_download_sidebar() -> None:
                     "Cookies stay on this computer."
                 ),
             )
+            st.slider(
+                "Concurrent fragments",
+                min_value=1,
+                max_value=16,
+                value=4,
+                key="concurrent_fragments",
+            )
+            st.checkbox("Limit bandwidth", key="use_rate_limit")
+            st.number_input(
+                "Bandwidth limit (MB/s)",
+                min_value=0.1,
+                max_value=1000.0,
+                value=5.0,
+                step=0.5,
+                disabled=not st.session_state.use_rate_limit,
+                key="rate_limit_mbps",
+            )
+            st.checkbox("Download a time range only", key="use_clip_range")
+            clip_start, clip_end = st.columns(2)
+            clip_start.number_input(
+                "Start (seconds)",
+                min_value=0.0,
+                value=0.0,
+                disabled=not st.session_state.use_clip_range,
+                key="clip_start",
+            )
+            clip_end.number_input(
+                "End (seconds)",
+                min_value=0.1,
+                value=60.0,
+                disabled=not st.session_state.use_clip_range,
+                key="clip_end",
+            )
+            st.checkbox("Split files by chapters", key="split_chapters")
+            st.multiselect(
+                "Remove YouTube segments with SponsorBlock",
+                ["sponsor", "intro", "outro", "selfpromo", "interaction", "filler"],
+                key="sponsorblock_remove",
+                help="Applied only where SponsorBlock data is available.",
+            )
 
 
 def render_library_sidebar() -> None:
@@ -210,6 +269,7 @@ def render_library_sidebar() -> None:
 
 def render_download_view() -> None:
     render_download_sidebar()
+    manager = get_download_manager()
 
     with st.container(border=True):
         st.markdown(SOURCE_LABEL_HTML, unsafe_allow_html=True)
@@ -244,7 +304,8 @@ def render_download_view() -> None:
         for preview in st.session_state.previews:
             render_preview(preview)
     if download_clicked:
-        download(raw_urls)
+        enqueue_download(raw_urls, manager)
+    render_download_jobs(manager)
 
 
 def render_library_view() -> None:
@@ -683,7 +744,13 @@ def analyze(raw_urls: str) -> None:
         st.error(str(exc))
 
 
-def download(raw_urls: str) -> None:
+def get_download_manager() -> DownloadJobManager:
+    if "download_job_manager" not in st.session_state:
+        st.session_state.download_job_manager = DownloadJobManager(max_workers=2)
+    return st.session_state.download_job_manager
+
+
+def enqueue_download(raw_urls: str, manager: DownloadJobManager) -> None:
     try:
         urls = parse_urls(raw_urls)
         request = build_request(urls)
@@ -693,45 +760,62 @@ def download(raw_urls: str) -> None:
     if shutil.which("ffmpeg") is None:
         st.error("FFmpeg was not found. Install FFmpeg and restart the app before downloading.")
         return
+    job_ids = manager.submit(request)
+    st.success(f"Queued {len(job_ids)} background download job(s).")
 
-    progress = st.progress(0.0, text="Preparing download…")
-    current_file = st.empty()
 
-    def on_progress(event: ProgressEvent) -> None:
-        if event.progress is not None:
-            progress.progress(event.progress, text=event.message)
-        else:
-            progress.progress(0.0, text=event.message)
-        if event.filename:
-            current_file.caption(Path(event.filename).name)
-
-    try:
-        with st.status("Download in progress", expanded=True) as status:
-            result = Downloader().download(request, on_progress)
-            status.update(label="Download complete", state="complete", expanded=False)
-    except DownloaderError as exc:
-        progress.empty()
-        st.error(str(exc))
+@st.fragment(run_every=1.0)
+def render_download_jobs(manager: DownloadJobManager) -> None:
+    jobs = manager.snapshots()
+    if not jobs:
         return
 
-    progress.progress(1.0, text="Complete")
-    st.success(
-        f"Created {len(result.files)} file(s) in {result.elapsed_seconds:.1f} seconds. "
-        f"Saved under {result.output_dir}"
-    )
-    st.session_state.pop("library_scanned_root", None)
-    if result.files:
-        st.markdown(RESULT_LABEL_HTML, unsafe_allow_html=True)
-        rows = [
-            {
-                "File": str(path.relative_to(result.output_dir)),
-                "Size": human_size(path.stat().st_size),
-            }
-            for path in result.files
-        ]
-        st.dataframe(rows, width="stretch", hide_index=True)
-    else:
-        st.info("No new files were created. They may already be listed in the download archive.")
+    st.markdown(RESULT_LABEL_HTML, unsafe_allow_html=True)
+    heading_col, clear_col = st.columns([3, 1])
+    heading_col.caption("Downloads continue while you browse this app session.")
+    if clear_col.button("Clear finished", width="stretch", key="jobs_clear_finished"):
+        manager.remove_finished()
+        st.rerun(scope="fragment")
+
+    for job in jobs:
+        with st.container(border=True):
+            title_col, status_col = st.columns([3, 1])
+            title_col.markdown(f"**{job.url}**")
+            status_col.caption(job.status.value.upper())
+            st.progress(job.progress, text=job.message)
+
+            details = []
+            if job.filename:
+                details.append(Path(job.filename).name)
+            if job.speed_bytes_per_second:
+                details.append(f"{human_size(int(job.speed_bytes_per_second))}/s")
+            if job.eta_seconds is not None:
+                details.append(f"ETA {int(job.eta_seconds)}s")
+            if details:
+                st.caption(" · ".join(details))
+            if job.error:
+                st.error(job.error)
+
+            action_col, files_col = st.columns([1, 3])
+            if job.status in {JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.PAUSING}:
+                if action_col.button("Pause", key=f"pause_{job.id}", width="stretch"):
+                    manager.pause(job.id)
+                    st.rerun(scope="fragment")
+            elif job.status is JobStatus.PAUSED:
+                if action_col.button("Resume", key=f"resume_{job.id}", width="stretch"):
+                    manager.resume(job.id)
+                    st.rerun(scope="fragment")
+            elif job.status is JobStatus.FAILED and action_col.button(
+                "Retry", key=f"retry_{job.id}", width="stretch"
+            ):
+                manager.retry(job.id)
+                st.rerun(scope="fragment")
+
+            if job.files:
+                files_col.caption(
+                    "Created: " + ", ".join(path.name for path in job.files[:4])
+                )
+                st.session_state.pop("library_scanned_root", None)
 
 
 if __name__ == "__main__":

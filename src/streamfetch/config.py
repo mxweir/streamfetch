@@ -109,7 +109,7 @@ def build_ydl_options(
         "ignoreerrors": True,
         "retries": 10,
         "fragment_retries": 10,
-        "concurrent_fragment_downloads": 4,
+        "concurrent_fragment_downloads": request.concurrent_fragments,
         "noplaylist": not request.allow_playlists,
         "download_archive": str(output_dir / ".streamfetch-archive.txt"),
         "quiet": True,
@@ -121,8 +121,14 @@ def build_ydl_options(
         options["progress_hooks"] = [progress_hook]
     if request.cookie_browser:
         options["cookiesfrombrowser"] = (request.cookie_browser,)
+    if request.rate_limit is not None:
+        options["ratelimit"] = request.rate_limit
+    if request.download_sections:
+        options["download_ranges"] = _download_ranges(request.download_sections)
+    if request.sponsorblock_remove:
+        options["sponsorblock_remove"] = set(request.sponsorblock_remove)
+    postprocessors = [{"key": "FFmpegSplitChapters"}] if request.split_chapters else []
 
-    postprocessors: list[dict] = []
     if request.media_type is MediaType.AUDIO:
         options["format"] = "bestaudio/best"
         postprocessors.append(
@@ -184,6 +190,28 @@ def validate_request(request: DownloadRequest) -> None:
         raise ValidationError(f"Unsupported video quality: {request.quality}")
     if request.max_items is not None and not 1 <= request.max_items <= 10_000:
         raise ValidationError("The item limit must be between 1 and 10,000.")
+    if not 1 <= request.concurrent_fragments <= 16:
+        raise ValidationError("Concurrent fragments must be between 1 and 16.")
+    if request.rate_limit is not None and request.rate_limit < 64 * 1024:
+        raise ValidationError("The bandwidth limit must be at least 64 KB/s.")
+    for section in request.download_sections:
+        try:
+            start_text, end_text = section.split("-", maxsplit=1)
+            start, end = float(start_text), float(end_text)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("Download sections must use start-end seconds.") from exc
+        if start < 0 or end <= start:
+            raise ValidationError("Download section ends must be after non-negative starts.")
+
+
+def _download_ranges(sections: tuple[str, ...]):
+    from yt_dlp.utils import download_range_func
+
+    ranges = []
+    for section in sections:
+        start_text, end_text = section.split("-", maxsplit=1)
+        ranges.append((float(start_text), float(end_text)))
+    return download_range_func([], ranges)
 
 
 def human_size(size: int) -> str:

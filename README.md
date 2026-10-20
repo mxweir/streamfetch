@@ -35,6 +35,9 @@ pastel paper surfaces, bold display type, sticker colors, and black outlined con
 - Video output as MP4, MKV, or WebM
 - Audio output as MP3, M4A, Opus, FLAC, or WAV
 - Configurable video resolution and audio quality
+- Parallel background download jobs with live speed and ETA
+- Pause, resume, and retry controls using partial-download continuation
+- Fragment concurrency, bandwidth limits, clip ranges, chapter splitting, and SponsorBlock
 - YouTube videos, playlists, multiple URLs, and complete channel/tab URLs
 - SoundCloud tracks, sets/playlists, profiles, and share links
 - Mixed YouTube and SoundCloud lists in audio mode
@@ -110,6 +113,15 @@ during a refresh also removes its associated library state; StreamFetch never
 deletes the media file itself. Browser autoplay rules can still require one
 manual press before the first playback in a new browser session.
 
+## Background downloads
+
+Each submitted URL becomes an independent background job. Two sources can run
+in parallel while the interface remains usable. Active jobs report progress,
+speed, ETA, and the current filename. Pausing stops after the current fragment;
+resuming uses yt-dlp's partial-download continuation. Advanced settings also
+support bandwidth limits, concurrent fragments, time ranges, chapter splitting,
+and optional SponsorBlock removal for supported YouTube sources.
+
 ## Docker
 
 ```bash
@@ -144,7 +156,7 @@ controls.
 ## Roadmap
 
 - Optional waveform and audio spectrum visualizations
-- Resumable background queue
+- Persist background jobs across full app restarts
 - Per-item selection before downloading a playlist
 - Optional desktop packaging
 - Internationalized interface
