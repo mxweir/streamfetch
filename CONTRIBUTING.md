@@ -7,7 +7,9 @@ Thanks for helping improve StreamFetch.
 3. Install development dependencies with `pip install -e ".[dev]"`.
 4. Add or update tests for behavioral changes.
 5. Run `ruff check .` and `pytest`.
-6. Open a pull request that explains the user-facing impact.
+6. For a user-visible release change, follow the visual notes format in
+   [`docs/RELEASING.md`](docs/RELEASING.md).
+7. Open a pull request that explains the user-facing impact.
 
 Do not submit features intended to bypass DRM, paywalls, access controls, or
 platform restrictions. Keep issue examples free of personal data, cookies,
