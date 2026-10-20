@@ -23,6 +23,8 @@ pastel paper surfaces, bold display type, sticker colors, and black outlined con
 ## Features
 
 - Bold pastel interface with outlined cards, pill controls, and responsive layout
+- Premium desktop-style app shell with a responsive library home screen
+- Floating mini-player with expandable queue, shuffle, repeat, and transition controls
 - Persistent local media library backed by a rebuildable SQLite index
 - Folder scanning with metadata, embedded cover art, search, filters, and sorting
 - Library statistics for audio, video, artists, and storage use
@@ -109,6 +111,11 @@ previous/next navigation, and keyboard controls: **Space** toggles playback,
 **N** advances, **P** goes back, and the arrow keys seek by five seconds.
 Queue entries can be reordered directly in the player. Repeat and transition
 settings, queue order, and paused playback positions persist in the library.
+
+The compact player stays docked at the lower-right edge of the browser so music
+keeps playing while navigating the library or download studio. Expand it for
+volume, repeat, crossfade, shuffle, clear, remove, and drag-to-reorder queue
+controls. On narrow screens it becomes a full-width bottom bar.
 
 The current item, queue, favorites, playlists, and the latest 5,000 play actions
 are stored locally in the same SQLite database. Removing a missing media file

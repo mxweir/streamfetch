@@ -1,7 +1,13 @@
 from pathlib import Path
 
 from streamfetch.library import MediaItem, QueueEntry
-from streamfetch.player import build_player_data, media_mime_type, media_url
+from streamfetch.player import (
+    PLAYER_HTML,
+    PLAYER_JS,
+    build_player_data,
+    media_mime_type,
+    media_url,
+)
 
 
 class FakeMediaManager:
@@ -97,3 +103,12 @@ def test_build_player_data_without_queue_has_no_next_track() -> None:
 
     assert data["next"] is None
     assert data["queue_count"] == 0
+
+
+def test_player_is_a_floating_expandable_queue_controller() -> None:
+    assert "data-expand" in PLAYER_HTML
+    assert "data-shuffle" in PLAYER_HTML
+    assert "data-clear" in PLAYER_HTML
+    assert 'emit("remove"' in PLAYER_JS
+    assert 'emit("shuffle")' in PLAYER_JS
+    assert 'emit("clear")' in PLAYER_JS
