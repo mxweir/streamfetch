@@ -53,11 +53,13 @@ def test_build_player_data_preloads_next_queue_entry() -> None:
 
     data = build_player_data(
         current,
-        queued,
+        (queued,),
         favorite=True,
         can_previous=False,
         autoplay=True,
-        queue_count=3,
+        repeat_mode="all",
+        crossfade_seconds=4,
+        resume_position=12.5,
         media_manager=manager,
     )
 
@@ -67,7 +69,13 @@ def test_build_player_data_preloads_next_queue_entry() -> None:
     assert data["favorite"] is True
     assert data["can_previous"] is False
     assert data["autoplay"] is True
-    assert data["queue_count"] == 3
+    assert data["queue_count"] == 1
+    assert data["repeat_mode"] == "all"
+    assert data["crossfade_seconds"] == 4
+    assert data["resume_position"] == 12.5
+    assert data["queue"] == [
+        {"entry_id": 42, "title": "Next", "artist": "Open Audio"}
+    ]
     assert [call[2] for call in manager.calls] == [
         "streamfetch-player-current",
         "streamfetch-player-next",
@@ -77,11 +85,13 @@ def test_build_player_data_preloads_next_queue_entry() -> None:
 def test_build_player_data_without_queue_has_no_next_track() -> None:
     data = build_player_data(
         media_item("/music/current.mp3"),
-        None,
+        (),
         favorite=False,
         can_previous=True,
         autoplay=False,
-        queue_count=0,
+        repeat_mode="off",
+        crossfade_seconds=0,
+        resume_position=0,
         media_manager=FakeMediaManager(),
     )
 

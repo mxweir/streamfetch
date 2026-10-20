@@ -331,7 +331,15 @@ def render_media_grid(
     playlists = library.playlists()
     favorite_paths = library.favorite_paths()
     shown = len(items)
-    st.caption(f"Showing {shown} of {total_matches} matching item(s).")
+    caption_col, play_col = st.columns([3, 1])
+    caption_col.caption(f"Showing {shown} of {total_matches} matching item(s).")
+    if play_col.button(
+        "▶ Play collection",
+        key=f"play_collection_{active_playlist_id}_{shown}",
+        width="stretch",
+    ):
+        library.replace_queue([item.path for item in items[1:]])
+        select_media(library, items[0])
     for start in range(0, shown, 3):
         columns = st.columns(3)
         for column, item in zip(columns, items[start : start + 3], strict=False):
@@ -383,7 +391,12 @@ def render_library_item(
         ):
             library.toggle_favorite(item.path)
             st.rerun()
-        if st.button("＋ Add to queue", key=f"queue_{item_key}", width="stretch"):
+        next_col, queue_col = st.columns(2)
+        if next_col.button("Play next", key=f"next_{item_key}", width="stretch"):
+            library.enqueue(item.path, play_next=True)
+            st.toast(f"{item.title} will play next.")
+            st.rerun()
+        if queue_col.button("Add to queue", key=f"queue_{item_key}", width="stretch"):
             library.enqueue(item.path)
             st.toast(f"Added {item.title} to the queue.")
             st.rerun()
@@ -455,11 +468,13 @@ def render_player(library: MediaLibrary) -> None:
             current_is_favorite = library.relative_path(current.path) in library.favorite_paths()
             player_data = build_player_data(
                 current,
-                queue[0] if queue else None,
+                queue,
                 favorite=current_is_favorite,
                 can_previous=previous is not None,
                 autoplay=autoplay,
-                queue_count=len(queue),
+                repeat_mode=library.player_setting("repeat", "off"),
+                crossfade_seconds=int(library.player_setting("crossfade", "0")),
+                resume_position=library.playback_position(current.path),
             )
             result = render_continuous_player(player_data)
             handle_player_action(library, result, previous)
@@ -477,9 +492,14 @@ def render_player(library: MediaLibrary) -> None:
                 if remove_col.button("Remove", key=f"queue_remove_{entry.id}"):
                     library.remove_queue_entry(entry.id)
                     st.rerun()
-            if queue and st.button("Clear queue", key="queue_clear"):
-                library.clear_queue()
-                st.rerun()
+            if queue:
+                shuffle_col, clear_col = st.columns(2)
+                if shuffle_col.button("Shuffle queue", key="queue_shuffle"):
+                    library.shuffle_queue()
+                    st.rerun()
+                if clear_col.button("Clear queue", key="queue_clear"):
+                    library.clear_queue()
+                    st.rerun()
 
 
 def handle_player_action(library: MediaLibrary, result, previous: MediaItem | None) -> None:
@@ -502,9 +522,40 @@ def handle_player_action(library: MediaLibrary, result, previous: MediaItem | No
     if action_type == "advance":
         entry_id = action.get("entry_id")
         if isinstance(entry_id, int):
+            current = library.current_item()
+            if current:
+                library.set_playback_position(current.path, 0)
+                if library.player_setting("repeat", "off") == "all":
+                    library.enqueue(current.path)
             next_item = library.take_queue_entry(entry_id)
             if next_item:
                 select_media(library, next_item)
+    if action_type == "jump":
+        entry_id = action.get("entry_id")
+        if isinstance(entry_id, int):
+            next_item = library.take_queue_entry(entry_id)
+            if next_item:
+                select_media(library, next_item)
+    if action_type == "reorder":
+        entry_ids = action.get("entry_ids")
+        if isinstance(entry_ids, list) and all(isinstance(value, int) for value in entry_ids):
+            library.reorder_queue(entry_ids)
+            st.rerun()
+    if action_type == "repeat" and action.get("mode") in {"off", "all", "one"}:
+        library.set_player_setting("repeat", action["mode"])
+        st.rerun()
+    if action_type == "crossfade" and action.get("seconds") in {0, 2, 4, 6}:
+        library.set_player_setting("crossfade", str(action["seconds"]))
+        st.rerun()
+    if action_type == "position" and isinstance(action.get("position"), (int, float)):
+        current = library.current_item()
+        if current:
+            library.set_playback_position(current.path, float(action["position"]))
+    if action_type == "replay":
+        current = library.current_item()
+        if current:
+            library.set_playback_position(current.path, 0)
+            library.record_play(current.path)
 
 
 def render_playlists(library: MediaLibrary) -> None:

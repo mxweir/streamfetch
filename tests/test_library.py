@@ -1,3 +1,4 @@
+import random
 import wave
 
 import pytest
@@ -153,3 +154,46 @@ def test_missing_media_cascades_through_collections(library):
     assert library.playlist_items(playlist.id) == ()
     assert library.history() == ()
     assert library.current_item() is None
+
+
+def test_smart_queue_supports_play_next_reorder_shuffle_and_replace(library):
+    tracks = [library.root / f"{name}.mp3" for name in ("one", "two", "three")]
+    for track in tracks:
+        track.write_bytes(track.stem.encode())
+    library.scan()
+
+    one_id = library.enqueue(tracks[0])
+    two_id = library.enqueue(tracks[1])
+    three_id = library.enqueue(tracks[2], play_next=True)
+    assert [entry.item.path.name for entry in library.queue()] == [
+        "three.mp3",
+        "one.mp3",
+        "two.mp3",
+    ]
+
+    library.reorder_queue([two_id, three_id, one_id])
+    assert [entry.id for entry in library.queue()] == [two_id, three_id, one_id]
+    with pytest.raises(ValueError, match="every queued item"):
+        library.reorder_queue([one_id])
+
+    library.shuffle_queue(random.Random(7))
+    assert {entry.id for entry in library.queue()} == {one_id, two_id, three_id}
+    library.replace_queue([tracks[2], tracks[0]])
+    assert [entry.item.path.name for entry in library.queue()] == ["three.mp3", "one.mp3"]
+
+
+def test_player_settings_and_resume_position_persist(library):
+    track = library.root / "resume.mp3"
+    track.write_bytes(b"resume")
+    library.scan()
+
+    assert library.player_setting("repeat", "off") == "off"
+    assert library.playback_position(track) == 0
+    library.set_player_setting("repeat", "all")
+    library.set_playback_position(track, 42.5)
+
+    reopened = MediaLibrary(library.root)
+    assert reopened.player_setting("repeat", "off") == "all"
+    assert reopened.playback_position(track) == 42.5
+    reopened.set_playback_position(track, 0)
+    assert reopened.playback_position(track) == 0
