@@ -16,22 +16,28 @@ from streamfetch.config import (
 )
 from streamfetch.downloader import Downloader, DownloaderError
 from streamfetch.models import DownloadRequest, MediaType, ProgressEvent
+from streamfetch.theme import (
+    APP_CSS,
+    HERO_HTML,
+    LEGAL_HTML,
+    PREVIEW_LABEL_HTML,
+    RESULT_LABEL_HTML,
+    SIDEBAR_HEADER_HTML,
+    SOURCE_LABEL_HTML,
+)
 
-st.set_page_config(page_title="StreamFetch", page_icon="⬇️", layout="wide")
+st.set_page_config(page_title="StreamFetch", page_icon="⚡", layout="wide")
 
 
 def render_header() -> None:
-    st.title("⬇️ StreamFetch")
-    st.caption("A local, open-source GUI for permitted YouTube and SoundCloud downloads")
-    st.info(
-        "Only download media you created, that is in the public domain, or that you have "
-        "permission to download. Respect copyright, platform terms, and local law.",
-        icon="⚖️",
-    )
+    st.markdown(APP_CSS, unsafe_allow_html=True)
+    st.markdown(HERO_HTML, unsafe_allow_html=True)
+    st.markdown(LEGAL_HTML, unsafe_allow_html=True)
 
 
 def render_preview(preview) -> None:
     with st.container(border=True):
+        st.markdown('<span class="sf-card-marker"></span>', unsafe_allow_html=True)
         left, right = st.columns([1, 3])
         with left:
             if preview.thumbnail:
@@ -101,7 +107,7 @@ def build_request(urls: tuple[str, ...]) -> DownloadRequest:
 
 def render_sidebar() -> None:
     with st.sidebar:
-        st.header("Download settings")
+        st.markdown(SIDEBAR_HEADER_HTML, unsafe_allow_html=True)
         st.radio("Media type", ["video", "audio"], horizontal=True, key="media_type")
 
         if st.session_state.media_type == "video":
@@ -170,35 +176,37 @@ def main() -> None:
     render_header()
     render_sidebar()
 
-    default_dir = str((Path.cwd() / "downloads").resolve())
-    st.text_input("Output directory", value=default_dir, key="output_dir")
-    raw_urls = st.text_area(
-        "YouTube or SoundCloud URLs",
-        height=150,
-        placeholder=(
-            "One URL per line:\n"
-            "https://www.youtube.com/watch?v=...\n"
-            "https://www.youtube.com/playlist?list=...\n"
-            "https://soundcloud.com/artist/track\n"
-            "https://soundcloud.com/artist/sets/collection"
-        ),
-    )
-    if "soundcloud.com" in raw_urls.lower() or "snd.sc/" in raw_urls.lower():
-        st.info("SoundCloud sources are audio-only. Select **Audio** in the sidebar.")
-    accepted = st.checkbox(
-        "I have permission to download these items and accept responsibility for their use."
-    )
+    with st.container(border=True):
+        st.markdown(SOURCE_LABEL_HTML, unsafe_allow_html=True)
+        default_dir = str((Path.cwd() / "downloads").resolve())
+        st.text_input("Output directory", value=default_dir, key="output_dir")
+        raw_urls = st.text_area(
+            "YouTube or SoundCloud URLs",
+            height=160,
+            placeholder=(
+                "One URL per line:\n"
+                "https://www.youtube.com/watch?v=...\n"
+                "https://www.youtube.com/playlist?list=...\n"
+                "https://soundcloud.com/artist/track\n"
+                "https://soundcloud.com/artist/sets/collection"
+            ),
+        )
+        if "soundcloud.com" in raw_urls.lower() or "snd.sc/" in raw_urls.lower():
+            st.info("SoundCloud sources are audio-only. Select **Audio** in the sidebar.")
+        accepted = st.checkbox(
+            "I have permission to download these items and accept responsibility for their use."
+        )
 
-    analyze_col, download_col, _ = st.columns([1, 1, 3])
-    analyze_clicked = analyze_col.button("Analyze", use_container_width=True)
-    download_clicked = download_col.button(
-        "Start download", type="primary", use_container_width=True, disabled=not accepted
-    )
+        analyze_col, download_col, _ = st.columns([1, 1, 2])
+        analyze_clicked = analyze_col.button("Analyze", use_container_width=True)
+        download_clicked = download_col.button(
+            "Start download", type="primary", use_container_width=True, disabled=not accepted
+        )
 
     if analyze_clicked:
         analyze(raw_urls)
     if st.session_state.get("previews"):
-        st.subheader("Preview")
+        st.markdown(PREVIEW_LABEL_HTML, unsafe_allow_html=True)
         for preview in st.session_state.previews:
             render_preview(preview)
     if download_clicked:
@@ -252,6 +260,7 @@ def download(raw_urls: str) -> None:
         f"Saved under {result.output_dir}"
     )
     if result.files:
+        st.markdown(RESULT_LABEL_HTML, unsafe_allow_html=True)
         rows = [
             {
                 "File": str(path.relative_to(result.output_dir)),

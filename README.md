@@ -10,6 +10,10 @@ YouTube videos, playlists, and channels as well as SoundCloud tracks, sets, and
 profiles. Format and quality selection, metadata, thumbnails, subtitles,
 browser cookies, and duplicate protection are built in.
 
+The visual direction is inspired by Refero's
+[Slush style reference](https://styles.refero.design/style/8b6b547f-a357-4f1b-9842-4579c62dd42b):
+pastel paper surfaces, bold display type, sticker colors, and black outlined controls.
+
 > [!IMPORTANT]
 > Download only media you created, media in the public domain, or media you have
 > permission to download. You are responsible for respecting copyright,
@@ -18,6 +22,7 @@ browser cookies, and duplicate protection are built in.
 
 ## Features
 
+- Bold pastel interface with outlined cards, pill controls, and responsive layout
 - Video output as MP4, MKV, or WebM
 - Audio output as MP3, M4A, Opus, FLAC, or WAV
 - Configurable video resolution and audio quality
