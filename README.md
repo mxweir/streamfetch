@@ -23,6 +23,9 @@ pastel paper surfaces, bold display type, sticker colors, and black outlined con
 ## Features
 
 - Bold pastel interface with outlined cards, pill controls, and responsive layout
+- Persistent local media library backed by a rebuildable SQLite index
+- Folder scanning with metadata, embedded cover art, search, filters, and sorting
+- Library statistics for audio, video, artists, and storage use
 - Video output as MP4, MKV, or WebM
 - Audio output as MP3, M4A, Opus, FLAC, or WAV
 - Configurable video resolution and audio quality
@@ -74,6 +77,19 @@ the download. SoundCloud sources support audio output; YouTube supports both
 video and audio. Files are stored in `downloads/` by default and organized by
 uploader and collection.
 
+## Local media library
+
+Select **Library** at the top of the app to scan and browse a local media
+folder. StreamFetch indexes MP3, M4A, Opus, Ogg, FLAC, WAV, MP4, MKV, and WebM
+files. The index lives in `.streamfetch/library.db` inside the selected folder;
+it contains only rebuildable metadata and can be recreated from the media files
+at any time.
+
+Use **Refresh library** after adding, moving, or deleting files. The library
+extracts embedded titles, artists, albums, durations, and artwork where the file
+format provides them. Search and filtering happen locally and no library data is
+uploaded.
+
 ## Docker
 
 ```bash
@@ -107,9 +123,9 @@ controls.
 
 ## Roadmap
 
+- Persistent player queue, playlists, favorites, and play history
 - Resumable background queue
 - Per-item selection before downloading a playlist
-- Persistent download history and disk-usage dashboard
 - Optional desktop packaging
 - Internationalized interface
 

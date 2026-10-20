@@ -248,6 +248,9 @@ p, label, [data-testid="stMarkdownContainer"] {
 ),
 [data-testid="stVerticalBlock"]:has(
     > [data-testid="stElementContainer"] .sf-card-marker
+),
+[data-testid="stVerticalBlock"]:has(
+    > [data-testid="stElementContainer"] .sf-library-card-marker
 ) {
     border: 1.5px solid var(--sf-black) !important;
     border-radius: 30px !important;
@@ -256,7 +259,87 @@ p, label, [data-testid="stMarkdownContainer"] {
     padding: 1.25rem !important;
 }
 
-.sf-card-marker { display: none; }
+.sf-card-marker,
+.sf-library-card-marker { display: none; }
+
+.sf-nav-label {
+    margin: 0.25rem 0 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+.sf-cover-placeholder {
+    display: grid;
+    width: 100%;
+    aspect-ratio: 1;
+    place-items: center;
+    overflow: hidden;
+    border: 1.5px solid var(--sf-black);
+    border-radius: 20px;
+    background: var(--sf-blue);
+}
+
+.sf-cover-placeholder span {
+    display: grid;
+    width: 86px;
+    height: 86px;
+    place-items: center;
+    border: 1.5px solid var(--sf-black);
+    border-radius: 26px;
+    background: var(--sf-yellow);
+    color: var(--sf-black);
+    font-family: "Arial Black", Impact, sans-serif;
+    font-size: 2.8rem;
+    transform: rotate(-7deg);
+}
+
+[data-testid="stImage"] img {
+    border: 1.5px solid var(--sf-black);
+    border-radius: 20px;
+    aspect-ratio: 1;
+    object-fit: cover;
+}
+
+.sf-media-title {
+    margin-top: 0.9rem;
+    overflow: hidden;
+    color: var(--sf-black);
+    font-family: "Arial Black", Impact, sans-serif;
+    font-size: 1.25rem;
+    letter-spacing: -0.035em;
+    line-height: 1.02;
+    text-overflow: ellipsis;
+}
+
+.sf-media-artist {
+    margin-top: 0.45rem;
+    color: var(--sf-black);
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+.sf-media-album {
+    color: #565656;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+[data-testid="stMetric"] {
+    min-height: 112px;
+    padding: 1rem;
+    border: 1.5px solid var(--sf-black);
+    border-radius: 20px;
+    background: var(--sf-mint);
+}
+
+[data-testid="stMetric"] [data-testid="stMetricValue"] {
+    color: var(--sf-black);
+    font-family: "Arial Black", Impact, sans-serif;
+    font-size: clamp(1.35rem, 2.4vw, 2.15rem);
+    letter-spacing: -0.04em;
+}
 
 .stTextInput [data-baseweb="input"],
 .stTextArea [data-baseweb="textarea"],
@@ -295,6 +378,10 @@ p, label, [data-testid="stMarkdownContainer"] {
 
 .stButton > button[kind="primary"] {
     background: var(--sf-black) !important;
+    color: var(--sf-white) !important;
+}
+
+.stButton > button[kind="primary"] p {
     color: var(--sf-white) !important;
 }
 
@@ -424,6 +511,14 @@ SIDEBAR_HEADER_HTML = """
 </div>
 """
 
+LIBRARY_SIDEBAR_HTML = """
+<div class="sf-sidebar-brand">
+    <strong>Browse your<br>library.</strong>
+    <span>Search · filter · rediscover</span>
+</div>
+"""
+
 SOURCE_LABEL_HTML = '<div class="sf-section-label">01 · Add sources</div>'
 PREVIEW_LABEL_HTML = '<div class="sf-section-label">02 · Preview</div>'
 RESULT_LABEL_HTML = '<div class="sf-section-label">03 · Your files</div>'
+LIBRARY_LABEL_HTML = '<div class="sf-section-label">Your local library</div>'
