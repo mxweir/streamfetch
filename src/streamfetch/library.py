@@ -37,6 +37,8 @@ class MediaItem:
     added_at: float
     cover_path: Path | None = None
     source_url: str | None = None
+    rating: int = 0
+    tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -74,6 +76,19 @@ class HistoryEntry:
     id: int
     item: MediaItem
     played_at: float
+
+
+@dataclass(frozen=True)
+class LibraryFacet:
+    name: str
+    item_count: int
+
+
+@dataclass(frozen=True)
+class ImportSummary:
+    imported: int
+    skipped: int
+    destination: Path
 
 
 class MediaLibrary:
@@ -168,20 +183,26 @@ class MediaLibrary:
         parameters: list[str | int] = []
         if search.strip():
             clauses.append(
-                "(title LIKE ? OR artist LIKE ? OR album LIKE ? OR path LIKE ?)"
+                "(COALESCE(custom_title, title) LIKE ? "
+                "OR COALESCE(custom_artist, artist) LIKE ? "
+                "OR COALESCE(custom_album, album) LIKE ? OR path LIKE ? "
+                "OR tags_json LIKE ?)"
             )
             pattern = f"%{search.strip()}%"
-            parameters.extend([pattern] * 4)
+            parameters.extend([pattern] * 5)
         if media_type in {"audio", "video"}:
             clauses.append("media_type = ?")
             parameters.append(media_type)
 
         order_by = {
-            "artist": "artist COLLATE NOCASE, title COLLATE NOCASE",
-            "largest": "size_bytes DESC, title COLLATE NOCASE",
-            "oldest": "modified_at ASC, title COLLATE NOCASE",
-            "title": "title COLLATE NOCASE",
-        }.get(sort, "modified_at DESC, title COLLATE NOCASE")
+            "artist": (
+                "COALESCE(custom_artist, artist) COLLATE NOCASE, "
+                "COALESCE(custom_title, title) COLLATE NOCASE"
+            ),
+            "largest": "size_bytes DESC, COALESCE(custom_title, title) COLLATE NOCASE",
+            "oldest": "modified_at ASC, COALESCE(custom_title, title) COLLATE NOCASE",
+            "title": "COALESCE(custom_title, title) COLLATE NOCASE",
+        }.get(sort, "modified_at DESC, COALESCE(custom_title, title) COLLATE NOCASE")
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         parameters.append(limit)
         with self._connection() as connection:
@@ -196,9 +217,12 @@ class MediaLibrary:
         parameters: list[str] = []
         if search.strip():
             clauses.append(
-                "(title LIKE ? OR artist LIKE ? OR album LIKE ? OR path LIKE ?)"
+                "(COALESCE(custom_title, title) LIKE ? "
+                "OR COALESCE(custom_artist, artist) LIKE ? "
+                "OR COALESCE(custom_album, album) LIKE ? OR path LIKE ? "
+                "OR tags_json LIKE ?)"
             )
-            parameters.extend([f"%{search.strip()}%"] * 4)
+            parameters.extend([f"%{search.strip()}%"] * 5)
         if media_type in {"audio", "video"}:
             clauses.append("media_type = ?")
             parameters.append(media_type)
@@ -218,7 +242,8 @@ class MediaLibrary:
                     SUM(CASE WHEN media_type = 'audio' THEN 1 ELSE 0 END) AS audio,
                     SUM(CASE WHEN media_type = 'video' THEN 1 ELSE 0 END) AS video,
                     COUNT(DISTINCT CASE
-                        WHEN artist != 'Unknown artist' THEN artist
+                        WHEN COALESCE(custom_artist, artist) != 'Unknown artist'
+                            THEN COALESCE(custom_artist, artist)
                     END) AS artists,
                     COALESCE(SUM(size_bytes), 0) AS size_bytes
                 FROM media_items
@@ -239,6 +264,180 @@ class MediaLibrary:
         if ".." in candidate.parts:
             raise ValueError("Media paths must stay inside the library folder.")
         return candidate.as_posix()
+
+    def update_metadata(
+        self,
+        path: Path | str,
+        *,
+        title: str,
+        artist: str,
+        album: str,
+        rating: int = 0,
+        tags: tuple[str, ...] | list[str] = (),
+    ) -> MediaItem:
+        relative_path = self.relative_path(path)
+        clean_title = " ".join(title.split())
+        clean_artist = " ".join(artist.split())
+        clean_album = " ".join(album.split())
+        if not clean_title:
+            raise ValueError("Title cannot be empty.")
+        if not 0 <= rating <= 5:
+            raise ValueError("Rating must be between 0 and 5.")
+        clean_tags = tuple(
+            dict.fromkeys(
+                tag
+                for value in tags
+                if (tag := " ".join(value.strip().split()))
+            )
+        )
+        if len(clean_tags) > 20 or any(len(tag) > 40 for tag in clean_tags):
+            raise ValueError("Use at most 20 tags with 40 characters each.")
+        with self._connection() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE media_items
+                SET custom_title = ?, custom_artist = ?, custom_album = ?,
+                    rating = ?, tags_json = ?
+                WHERE path = ?
+                """,
+                (
+                    clean_title,
+                    clean_artist or "Unknown artist",
+                    clean_album or "Singles",
+                    rating,
+                    json.dumps(clean_tags),
+                    relative_path,
+                ),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("The selected item is not indexed in this library.")
+        item = self.item_for_path(relative_path)
+        if item is None:  # pragma: no cover - guarded by the update above
+            raise ValueError("The selected item is not indexed in this library.")
+        return item
+
+    def recently_added(self, limit: int = 120) -> tuple[MediaItem, ...]:
+        return self._items_for_query(
+            "SELECT * FROM media_items ORDER BY added_at DESC, path LIMIT ?",
+            (limit,),
+        )
+
+    def most_played(self, limit: int = 120) -> tuple[MediaItem, ...]:
+        return self._items_for_query(
+            """
+            SELECT media_items.*, COUNT(play_history.id) AS play_count
+            FROM media_items
+            JOIN play_history ON play_history.path = media_items.path
+            GROUP BY media_items.path
+            ORDER BY play_count DESC, MAX(play_history.played_at) DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+
+    def highly_rated(self, minimum: int = 4, limit: int = 120) -> tuple[MediaItem, ...]:
+        return self._items_for_query(
+            """
+            SELECT * FROM media_items
+            WHERE rating >= ?
+            ORDER BY rating DESC, COALESCE(custom_title, title) COLLATE NOCASE
+            LIMIT ?
+            """,
+            (minimum, limit),
+        )
+
+    def unplayed(self, limit: int = 120) -> tuple[MediaItem, ...]:
+        return self._items_for_query(
+            """
+            SELECT media_items.*
+            FROM media_items
+            LEFT JOIN play_history ON play_history.path = media_items.path
+            WHERE play_history.id IS NULL
+            ORDER BY media_items.added_at DESC, media_items.path
+            LIMIT ?
+            """,
+            (limit,),
+        )
+
+    def artists(self) -> tuple[LibraryFacet, ...]:
+        return self._facets("COALESCE(custom_artist, artist)")
+
+    def albums(self) -> tuple[LibraryFacet, ...]:
+        return self._facets("COALESCE(custom_album, album)")
+
+    def items_for_artist(self, artist: str) -> tuple[MediaItem, ...]:
+        return self._items_for_query(
+            """
+            SELECT * FROM media_items
+            WHERE COALESCE(custom_artist, artist) = ? COLLATE NOCASE
+            ORDER BY COALESCE(custom_album, album) COLLATE NOCASE,
+                     COALESCE(custom_title, title) COLLATE NOCASE
+            """,
+            (artist,),
+        )
+
+    def items_for_album(self, album: str) -> tuple[MediaItem, ...]:
+        return self._items_for_query(
+            """
+            SELECT * FROM media_items
+            WHERE COALESCE(custom_album, album) = ? COLLATE NOCASE
+            ORDER BY COALESCE(custom_artist, artist) COLLATE NOCASE,
+                     COALESCE(custom_title, title) COLLATE NOCASE
+            """,
+            (album,),
+        )
+
+    def duplicate_groups(self) -> tuple[tuple[MediaItem, ...], ...]:
+        with self._connection() as connection:
+            candidates = connection.execute(
+                """
+                SELECT * FROM media_items
+                WHERE size_bytes IN (
+                    SELECT size_bytes FROM media_items
+                    GROUP BY size_bytes HAVING COUNT(*) > 1
+                )
+                ORDER BY size_bytes DESC, path
+                """
+            ).fetchall()
+        groups: dict[tuple[int, str], list[MediaItem]] = {}
+        for row in candidates:
+            item = self._item_from_row(row)
+            try:
+                digest = _file_digest(item.path)
+            except OSError:
+                continue
+            groups.setdefault((item.size_bytes, digest), []).append(item)
+        return tuple(tuple(group) for group in groups.values() if len(group) > 1)
+
+    def import_folder(self, source: Path | str) -> ImportSummary:
+        if not str(source).strip():
+            raise ValueError("Choose an existing folder to import.")
+        source_path = Path(source).expanduser().resolve()
+        if not source_path.is_dir():
+            raise ValueError("Choose an existing folder to import.")
+        if (
+            source_path == self.root
+            or source_path in self.root.parents
+            or self.root in source_path.parents
+        ):
+            raise ValueError("The import folder must be outside the library folder.")
+
+        destination = self.root / "Imported" / source_path.name
+        imported = skipped = 0
+        for source_file in sorted(source_path.rglob("*")):
+            if not source_file.is_file() or source_file.suffix.lower() not in MEDIA_EXTENSIONS:
+                continue
+            relative = source_file.relative_to(source_path)
+            target = destination / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                if target.stat().st_size == source_file.stat().st_size:
+                    skipped += 1
+                    continue
+                target = _available_path(target)
+            shutil.copy2(source_file, target)
+            imported += 1
+        return ImportSummary(imported, skipped, destination)
 
     def item_for_path(self, path: Path | str) -> MediaItem | None:
         relative_path = self.relative_path(path)
@@ -575,6 +774,27 @@ class MediaLibrary:
             ).fetchall()
         return tuple(self._item_from_row(row) for row in rows)
 
+    def _items_for_query(
+        self,
+        query: str,
+        parameters: tuple[Any, ...] = (),
+    ) -> tuple[MediaItem, ...]:
+        with self._connection() as connection:
+            rows = connection.execute(query, parameters).fetchall()
+        return tuple(self._item_from_row(row) for row in rows)
+
+    def _facets(self, expression: str) -> tuple[LibraryFacet, ...]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT {expression} AS name, COUNT(*) AS item_count
+                FROM media_items
+                GROUP BY {expression}
+                ORDER BY name COLLATE NOCASE
+                """  # noqa: S608
+            ).fetchall()
+        return tuple(LibraryFacet(row["name"], row["item_count"]) for row in rows)
+
     def _connect(self) -> sqlite3.Connection:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.database_path)
@@ -594,7 +814,12 @@ class MediaLibrary:
                 modified_at REAL NOT NULL,
                 added_at REAL NOT NULL,
                 cover_path TEXT,
-                source_url TEXT
+                source_url TEXT,
+                custom_title TEXT,
+                custom_artist TEXT,
+                custom_album TEXT,
+                rating INTEGER NOT NULL DEFAULT 0,
+                tags_json TEXT NOT NULL DEFAULT '[]'
             )
             """
         )
@@ -653,6 +878,20 @@ class MediaLibrary:
             connection.execute("UPDATE queue SET position = id")
         connection.execute("DROP INDEX IF EXISTS queue_order")
         connection.execute("CREATE INDEX queue_order ON queue(position, id)")
+        media_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(media_items)")
+        }
+        for column, definition in (
+            ("custom_title", "TEXT"),
+            ("custom_artist", "TEXT"),
+            ("custom_album", "TEXT"),
+            ("rating", "INTEGER NOT NULL DEFAULT 0"),
+            ("tags_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ):
+            if column not in media_columns:
+                connection.execute(
+                    f"ALTER TABLE media_items ADD COLUMN {column} {definition}"  # noqa: S608
+                )
         return connection
 
     @contextmanager
@@ -731,11 +970,18 @@ class MediaLibrary:
 
     def _item_from_row(self, row: sqlite3.Row) -> MediaItem:
         cover_path = self.root / row["cover_path"] if row["cover_path"] else None
+        keys = set(row.keys())
+        tags_value = row["tags_json"] if "tags_json" in keys else "[]"
+        try:
+            tags = tuple(json.loads(tags_value or "[]"))
+        except (TypeError, json.JSONDecodeError):
+            tags = ()
         return MediaItem(
             path=self.root / row["path"],
-            title=row["title"],
-            artist=row["artist"],
-            album=row["album"],
+            title=(row["custom_title"] if "custom_title" in keys else None) or row["title"],
+            artist=(row["custom_artist"] if "custom_artist" in keys else None)
+            or row["artist"],
+            album=(row["custom_album"] if "custom_album" in keys else None) or row["album"],
             duration_seconds=row["duration_seconds"],
             size_bytes=row["size_bytes"],
             media_type=row["media_type"],
@@ -744,6 +990,8 @@ class MediaLibrary:
             added_at=row["added_at"],
             cover_path=cover_path,
             source_url=row["source_url"],
+            rating=row["rating"] if "rating" in keys else 0,
+            tags=tags,
         )
 
 
@@ -779,6 +1027,23 @@ def _image_extension(data: bytes) -> str:
     if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
         return "webp"
     return "jpg"
+
+
+def _file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _available_path(path: Path) -> Path:
+    counter = 2
+    while True:
+        candidate = path.with_name(f"{path.stem} ({counter}){path.suffix}")
+        if not candidate.exists():
+            return candidate
+        counter += 1
 
 
 def _ffprobe_metadata(path: Path, current: dict[str, Any]) -> dict[str, Any]:
