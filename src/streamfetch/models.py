@@ -49,10 +49,12 @@ class PreviewEntry:
     title: str
     duration: int | None = None
     webpage_url: str | None = None
+    identifier: str | None = None
 
 
 @dataclass(frozen=True)
 class SourcePreview:
+    source_url: str
     title: str
     source_type: str
     uploader: str | None

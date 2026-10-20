@@ -51,6 +51,9 @@ PLAYER_HTML = """
   </div>
   <div class="sf-player-expanded">
     <div class="sf-player-video" data-video-slot></div>
+    <div class="sf-player-visualizer" data-visualizer-wrap>
+      <canvas data-visualizer aria-label="Audio visualization"></canvas>
+    </div>
     <div class="sf-player-topline">
       <span class="sf-player-status" data-status>READY</span>
       <span data-queue>QUEUE EMPTY</span>
@@ -58,6 +61,8 @@ PLAYER_HTML = """
     <div class="sf-player-footer">
       <label>VOL <input data-volume type="range" min="0" max="1" step="0.05"
                         value="1" aria-label="Volume"></label>
+      <button type="button" data-visualizer-toggle
+              aria-label="Change visualization">VIS OFF</button>
       <button type="button" data-repeat aria-label="Change repeat mode">REPEAT OFF</button>
       <button type="button" data-crossfade aria-label="Change crossfade duration">XF 0S</button>
     </div>
@@ -253,6 +258,16 @@ PLAYER_CSS = """
   border-radius: 13px;
   background: #000;
 }
+.sf-player-visualizer {
+  display: none;
+  height: 92px;
+  overflow: hidden;
+  border: 1px solid rgba(217,184,255,.18);
+  border-radius: 13px;
+  background: linear-gradient(180deg, rgba(217,184,255,.08), rgba(117,184,255,.025));
+}
+.sf-player-visualizer.is-visible { display: block; }
+.sf-player-visualizer canvas { display: block; height: 100%; width: 100%; }
 audio, video[data-video] { display: none; }
 
 @media (max-width: 680px) {
@@ -322,6 +337,19 @@ export default function(component) {
   const volume = root.querySelector("[data-volume]");
   const queue = root.querySelector("[data-queue]");
   const queueList = root.querySelector("[data-queue-list]");
+  const visualizerWrap = root.querySelector("[data-visualizer-wrap]");
+  const visualizerCanvas = root.querySelector("[data-visualizer]");
+  const visualizerToggle = root.querySelector("[data-visualizer-toggle]");
+  const labels = {
+    play: "PLAY", pause: "PAUSE", shuffle: "SHUFFLE", clear: "CLEAR",
+    repeat: "REPEAT", up_next: "UP NEXT · DRAG TO REORDER",
+    queue_empty: "QUEUE EMPTY", playing: "PLAYING", paused: "PAUSED",
+    press_play: "PRESS PLAY", visualizer: "VIS",
+    ...(data.labels ?? {}),
+  };
+  shuffle.textContent = labels.shuffle;
+  clear.textContent = labels.clear;
+  root.querySelector(".sf-player-queue-head strong").textContent = labels.up_next;
 
   const state = root.__streamfetchState ?? {
     track: null,
@@ -329,6 +357,8 @@ export default function(component) {
     fadeTimer: null,
     restoring: false,
     expanded: false,
+    visualizerMode: data.visualizer_mode ?? "off",
+    sources: new WeakMap(),
   };
   state.nextTrack = data.next ?? null;
   state.queueItems = data.queue ?? [];
@@ -343,12 +373,13 @@ export default function(component) {
     favorite.setAttribute("aria-label", data.favorite ? "Remove favorite" : "Add favorite");
     previous.disabled = !data.can_previous;
     next.disabled = !state.nextTrack;
-    repeat.textContent = `REPEAT ${data.repeat_mode.toUpperCase()}`;
+    repeat.textContent = `${labels.repeat} ${data.repeat_mode.toUpperCase()}`;
     crossfade.textContent = `XF ${data.crossfade_seconds}S`;
     mediaIcon.textContent = track.media_type === "video" ? "▶" : "♫";
     queue.textContent = data.queue_count
       ? `QUEUE · ${data.queue_count}`
-      : "QUEUE EMPTY";
+      : labels.queue_empty;
+    visualizerToggle.textContent = `${labels.visualizer} ${state.visualizerMode.toUpperCase()}`;
   };
 
   const renderQueue = () => {
@@ -363,7 +394,7 @@ export default function(component) {
       label.textContent = `${item.title} — ${item.artist}`;
       const playNow = document.createElement("button");
       playNow.type = "button";
-      playNow.textContent = "PLAY";
+      playNow.textContent = labels.play;
       playNow.onclick = () => emit("jump", { entry_id: item.entry_id });
       const remove = document.createElement("button");
       remove.type = "button";
@@ -404,9 +435,79 @@ export default function(component) {
 
   const syncPlayback = () => {
     const media = activeMedia();
-    play.textContent = media.paused ? "PLAY" : "PAUSE";
+    play.textContent = media.paused ? labels.play : labels.pause;
     play.setAttribute("aria-label", media.paused ? "Play" : "Pause");
-    status.textContent = media.paused ? "PAUSED" : "PLAYING";
+    status.textContent = media.paused ? labels.paused : labels.playing;
+  };
+
+  const startVisualizer = () => {
+    if (state.visualizerMode === "off") {
+      visualizerWrap.classList.remove("is-visible");
+      if (state.visualizerFrame) cancelAnimationFrame(state.visualizerFrame);
+      state.visualizerFrame = null;
+      return;
+    }
+    visualizerWrap.classList.add("is-visible");
+    const media = activeMedia();
+    try {
+      state.audioContext ??= new (window.AudioContext || window.webkitAudioContext)();
+      state.analyser ??= state.audioContext.createAnalyser();
+      state.analyser.fftSize = 256;
+      if (!state.analyserConnected) {
+        state.analyser.connect(state.audioContext.destination);
+        state.analyserConnected = true;
+      }
+      if (!state.sources.has(media)) {
+        const source = state.audioContext.createMediaElementSource(media);
+        source.connect(state.analyser);
+        state.sources.set(media, source);
+      }
+      state.audioContext.resume();
+    } catch (_error) {
+      status.textContent = "VISUALIZER UNAVAILABLE";
+      return;
+    }
+    const context = visualizerCanvas.getContext("2d");
+    const draw = () => {
+      const ratio = window.devicePixelRatio || 1;
+      const width = visualizerCanvas.clientWidth;
+      const height = visualizerCanvas.clientHeight;
+      if (visualizerCanvas.width !== width * ratio || visualizerCanvas.height !== height * ratio) {
+        visualizerCanvas.width = width * ratio;
+        visualizerCanvas.height = height * ratio;
+        context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      }
+      context.clearRect(0, 0, width, height);
+      const gradient = context.createLinearGradient(0, 0, width, height);
+      gradient.addColorStop(0, "#d9b8ff");
+      gradient.addColorStop(1, "#75b8ff");
+      context.fillStyle = gradient;
+      context.strokeStyle = "#d9b8ff";
+      context.lineWidth = 2;
+      if (state.visualizerMode === "spectrum") {
+        const values = new Uint8Array(state.analyser.frequencyBinCount);
+        state.analyser.getByteFrequencyData(values);
+        const gap = 2;
+        const barWidth = Math.max(2, width / values.length - gap);
+        values.forEach((value, index) => {
+          const barHeight = Math.max(2, (value / 255) * (height - 8));
+          context.fillRect(index * (barWidth + gap), height - barHeight, barWidth, barHeight);
+        });
+      } else {
+        const values = new Uint8Array(state.analyser.fftSize);
+        state.analyser.getByteTimeDomainData(values);
+        context.beginPath();
+        values.forEach((value, index) => {
+          const x = (index / (values.length - 1)) * width;
+          const y = (value / 255) * height;
+          if (index === 0) context.moveTo(x, y); else context.lineTo(x, y);
+        });
+        context.stroke();
+      }
+      state.visualizerFrame = requestAnimationFrame(draw);
+    };
+    if (state.visualizerFrame) cancelAnimationFrame(state.visualizerFrame);
+    draw();
   };
 
   const setTrack = (track, shouldPlay = false) => {
@@ -437,10 +538,11 @@ export default function(component) {
     syncMeta(track);
     syncProgress();
     syncPlayback();
+    if (state.visualizerMode !== "off") startVisualizer();
 
     if (shouldPlay) {
       media.play().catch(() => {
-        status.textContent = "PRESS PLAY";
+        status.textContent = labels.press_play;
       });
       if (fadeIn > 0) {
         if (state.fadeTimer) clearInterval(state.fadeTimer);
@@ -489,7 +591,7 @@ export default function(component) {
       emit("replay");
     } else {
       status.textContent = "QUEUE ENDED";
-      play.textContent = "PLAY";
+      play.textContent = labels.play;
     }
   };
   const onPlay = () => syncPlayback();
@@ -532,6 +634,7 @@ export default function(component) {
   play.onclick = () => {
     const media = activeMedia();
     if (media.paused) {
+      if (state.visualizerMode !== "off") startVisualizer();
       media.play().catch(() => { status.textContent = "PLAY BLOCKED"; });
     } else {
       media.pause();
@@ -544,7 +647,7 @@ export default function(component) {
   repeat.onclick = () => {
     const modes = ["off", "all", "one"];
     const mode = modes[(modes.indexOf(data.repeat_mode) + 1) % modes.length];
-    repeat.textContent = `REPEAT ${mode.toUpperCase()}`;
+    repeat.textContent = `${labels.repeat} ${mode.toUpperCase()}`;
     emit("repeat", { mode });
   };
   crossfade.onclick = () => {
@@ -557,6 +660,14 @@ export default function(component) {
     state.expanded = !state.expanded;
     root.classList.toggle("is-expanded", state.expanded);
     expand.setAttribute("aria-expanded", String(state.expanded));
+    if (state.expanded) startVisualizer();
+  };
+  visualizerToggle.onclick = () => {
+    const modes = ["off", "spectrum", "waveform"];
+    state.visualizerMode = modes[(modes.indexOf(state.visualizerMode) + 1) % modes.length];
+    visualizerToggle.textContent = `${labels.visualizer} ${state.visualizerMode.toUpperCase()}`;
+    startVisualizer();
+    emit("visualization", { mode: state.visualizerMode });
   };
   shuffle.onclick = () => emit("shuffle");
   clear.onclick = () => emit("clear");
@@ -601,6 +712,7 @@ export default function(component) {
   renderQueue();
   root.classList.toggle("is-expanded", state.expanded);
   expand.setAttribute("aria-expanded", String(state.expanded));
+  if (state.expanded && state.visualizerMode !== "off") startVisualizer();
 
   if (state.nextTrack?.media_type === "audio") {
     const preloader = new Audio();
@@ -611,6 +723,7 @@ export default function(component) {
 
   return () => {
     window.removeEventListener("resize", positionDock);
+    if (state.visualizerFrame) cancelAnimationFrame(state.visualizerFrame);
     dockTarget.removeAttribute("data-streamfetch-player-dock");
     for (const property of ["bottom", "left", "position", "right", "width", "z-index"]) {
       dockTarget.style.removeProperty(property);
@@ -662,6 +775,8 @@ def build_player_data(
     repeat_mode: str,
     crossfade_seconds: int,
     resume_position: float,
+    visualizer_mode: str = "off",
+    labels: dict[str, str] | None = None,
     media_manager: Any | None = None,
 ) -> dict[str, Any]:
     """Create the trusted payload passed to the continuous player component."""
@@ -697,6 +812,8 @@ def build_player_data(
         "repeat_mode": repeat_mode,
         "crossfade_seconds": crossfade_seconds,
         "resume_position": resume_position,
+        "visualizer_mode": visualizer_mode,
+        "labels": labels or {},
     }
 
 

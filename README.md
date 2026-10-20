@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/product-tour.gif" width="760" alt="StreamFetch product tour showing downloads, the media library, and the floating player">
+  <img src="docs/assets/releases/v1.1.0/product-tour.gif" width="760" alt="StreamFetch 1.1 product tour showing the branded app shell, collection selection, and visualizer player">
 </p>
 
 StreamFetch wraps [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) in a focused
@@ -47,20 +47,20 @@ local library, and play it without sending your collection to a cloud service.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/assets/download-studio.png" alt="StreamFetch download studio"></td>
-    <td width="50%"><img src="docs/assets/library-home.png" alt="StreamFetch local media library"></td>
+    <td width="50%"><img src="docs/assets/releases/v1.1.0/app-shell.png" alt="StreamFetch 1.1 branded app shell"></td>
+    <td width="50%"><img src="docs/assets/releases/v1.1.0/collection-selection.png" alt="Per-item selection for a YouTube collection"></td>
   </tr>
   <tr>
-    <td align="center"><strong>Download studio</strong><br><sub>YouTube and SoundCloud · video, audio, playlists, channels, sets, and profiles</sub></td>
-    <td align="center"><strong>Local library</strong><br><sub>Embedded artwork · search · filters · smart collections</sub></td>
+    <td align="center"><strong>One coherent app</strong><br><sub>New StreamFetch identity · local-first workspace · English and German</sub></td>
+    <td align="center"><strong>Choose before downloading</strong><br><sub>Inspect playlists, channels, sets, and profiles · select only the items you want</sub></td>
   </tr>
 </table>
 
 <p align="center">
-  <img src="docs/assets/player-queue.png" width="820" alt="Expanded StreamFetch player with playback queue">
+  <img src="docs/assets/releases/v1.1.0/player-visualizer.png" width="820" alt="Expanded StreamFetch player with live waveform and playback queue">
   <br>
-  <strong>Floating player and smart queue</strong><br>
-  <sub>Continuous playback · drag to reorder · shuffle · repeat · crossfade · saved position</sub>
+  <strong>Floating player, smart queue, and live visuals</strong><br>
+  <sub>Waveform or spectrum · continuous playback · drag to reorder · shuffle · repeat · crossfade · saved position</sub>
 </p>
 
 ## What you get
@@ -72,6 +72,8 @@ local library, and play it without sending your collection to a cloud service.
 - Video output as MP4, MKV, or WebM; audio as MP3, M4A, Opus, FLAC, or WAV
 - Resolution and audio-quality controls, metadata, thumbnails, and subtitles
 - Parallel background jobs with live progress, speed, ETA, pause, resume, and retry
+- Durable job state that survives closing and fully restarting the app
+- Per-item preview and selection before downloading playlists, channels, sets, or profiles
 - Collection safety limits, bandwidth limits, fragment concurrency, clip ranges,
   chapter splitting, SponsorBlock, and optional browser cookies
 - Download archive and cross-platform filename normalization
@@ -92,6 +94,13 @@ local library, and play it without sending your collection to a cloud service.
 - Previous/next, seek, shuffle, play-next, clear, remove, and drag-to-reorder controls
 - Keyboard shortcuts: <kbd>Space</kbd> play/pause, <kbd>N</kbd> next,
   <kbd>P</kbd> previous, and arrow keys to seek five seconds
+- Optional live waveform and audio-spectrum visualizations powered by the Web Audio API
+
+### App experience
+
+- English and German interface with an automatic system-language default
+- StreamFetch logo and identity throughout the browser and native desktop shell
+- Native desktop launcher powered by pywebview, plus a PyInstaller packaging profile
 
 ## Quick start
 
@@ -133,6 +142,25 @@ format, confirm permission, and start the download. Files are saved to
 > Keep `yt-dlp` current. Some YouTube formats can also require a JavaScript
 > runtime supported by yt-dlp.
 
+## Native desktop app
+
+Run StreamFetch in its own native window instead of a browser tab:
+
+```bash
+pip install -e ".[desktop]"
+streamfetch-desktop
+```
+
+To create a standalone desktop build for the current operating system:
+
+```bash
+pip install -e ".[package]"
+pyinstaller --clean packaging/streamfetch.spec
+```
+
+The build is written to `dist/StreamFetch`. Desktop bundles are platform-specific,
+so build separately on macOS, Windows, or Linux for each target.
+
 ## Docker
 
 ```bash
@@ -155,6 +183,10 @@ when cleaning the index or reviewing duplicates.
 Metadata edits in the app affect the local index, not the underlying media
 file. Favorites, playlists, the queue, paused positions, and up to 5,000 recent
 play actions live in the same local database.
+
+Download jobs are stored separately in `~/.streamfetch/download-jobs.json`.
+Completed and failed jobs return after a restart; interrupted jobs return paused
+and can be resumed deliberately.
 
 ## Development
 
@@ -179,12 +211,12 @@ bandwidth and storage. Do not expose it to the internet without authentication,
 quotas, isolation, and storage controls. Please report vulnerabilities through
 [SECURITY.md](SECURITY.md).
 
-## Roadmap
+## Version 1.1 roadmap: complete
 
-- Persistent background jobs across full app restarts
-- Per-item selection before downloading a playlist or channel
-- Optional waveform and audio-spectrum visualizations
-- Desktop packaging and internationalization
+The complete 1.1 roadmap is now shipped: restart-safe background jobs,
+collection item selection, live audio visualizations, desktop packaging, and
+English/German localization. See the [visual 1.1 release notes](docs/releases/v1.1.0.md)
+for the implementation tour and verification details.
 
 ## Contributing
 

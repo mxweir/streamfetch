@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +35,7 @@ class Downloader:
             raise DownloaderError(str(exc)) from exc
         if not info:
             raise DownloaderError("No downloadable media was found.")
-        return _preview_from_info(info)
+        return _preview_from_info(info, source_url=url)
 
     def download(
         self,
@@ -89,13 +89,14 @@ class Downloader:
         return DownloadResult(output_dir, files, started_at, finished_at)
 
 
-def _preview_from_info(info: dict[str, Any]) -> SourcePreview:
+def _preview_from_info(info: dict[str, Any], source_url: str = "") -> SourcePreview:
     raw_entries = info.get("entries") or []
     entries = tuple(
         PreviewEntry(
             title=entry.get("title") or "Untitled",
             duration=entry.get("duration"),
-            webpage_url=entry.get("webpage_url") or entry.get("url"),
+            webpage_url=_entry_url(entry, source_url),
+            identifier=entry.get("id"),
         )
         for entry in raw_entries
         if entry
@@ -105,6 +106,7 @@ def _preview_from_info(info: dict[str, Any]) -> SourcePreview:
         count = len(entries)
     source_type = info.get("_type") or ("playlist" if entries else "video")
     return SourcePreview(
+        source_url=source_url,
         title=info.get("title") or "Untitled",
         source_type=source_type,
         uploader=info.get("uploader") or info.get("channel"),
@@ -113,6 +115,40 @@ def _preview_from_info(info: dict[str, Any]) -> SourcePreview:
         thumbnail=info.get("thumbnail"),
         raw=info,
     )
+
+
+def _entry_url(entry: dict[str, Any], source_url: str) -> str | None:
+    value = entry.get("webpage_url") or entry.get("original_url") or entry.get("url")
+    if isinstance(value, str) and value.startswith(("https://", "http://")):
+        return value
+    identifier = entry.get("id")
+    if identifier and ("youtube.com" in source_url or "youtu.be" in source_url):
+        return f"https://www.youtube.com/watch?v={identifier}"
+    return None
+
+
+def resolve_selected_urls(
+    source_urls: Sequence[str],
+    previews: Sequence[SourcePreview],
+    selections: Mapping[str, Sequence[str]],
+) -> tuple[str, ...]:
+    """Replace analyzed collections with their selected entry URLs."""
+
+    previews_by_source = {preview.source_url: preview for preview in previews}
+    result: list[str] = []
+    for source_url in source_urls:
+        preview = previews_by_source.get(source_url)
+        ordered_entries = tuple(
+            entry.webpage_url for entry in preview.entries if entry.webpage_url
+        ) if preview else ()
+        available = set(ordered_entries)
+        if not available:
+            result.append(source_url)
+            continue
+        result.extend(
+            value for value in selections.get(source_url, ordered_entries) if value in available
+        )
+    return tuple(dict.fromkeys(result))
 
 
 def _import_yt_dlp():

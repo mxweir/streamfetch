@@ -59,17 +59,12 @@ p, label, [data-testid="stMarkdownContainer"] { color: inherit; }
 }
 
 .sf-logo {
-    display: grid;
-    height: 36px;
-    width: 36px;
-    place-items: center;
-    border-radius: 11px;
-    background: var(--sf-ink);
-    color: #fff;
-    font-size: .74rem;
-    font-weight: 900;
-    letter-spacing: -.04em;
+    display: block;
+    flex: 0 0 38px;
+    height: 38px;
+    width: 38px;
 }
+.sf-logo svg { display: block; height: 100%; width: 100%; }
 
 .sf-appbar strong { font-size: .93rem; letter-spacing: -.02em; }
 .sf-appbar small { color: #716b79; font-size: .72rem; }
@@ -240,7 +235,6 @@ p, label, [data-testid="stMarkdownContainer"] { color: inherit; }
     padding: .2rem .1rem .8rem;
 }
 .sf-sidebar-brand__top { align-items: center; display: flex; gap: .75rem; }
-.sf-sidebar-brand .sf-logo { background: var(--sf-lilac); color: var(--sf-ink); }
 .sf-sidebar-brand strong {
     display: block;
     color: #fff;
@@ -257,8 +251,6 @@ p, label, [data-testid="stMarkdownContainer"] { color: inherit; }
     font-weight: 800;
     letter-spacing: .1em;
     text-transform: uppercase;
-}
-
 [data-testid="stVerticalBlock"]:has(
     > [data-testid="stElementContainer"] .sf-card-marker
 ),
@@ -471,54 +463,86 @@ hr { border-color: rgba(23,21,28,.13) !important; }
 </style>
 """
 
-HERO_HTML = """
+LOGO_SVG = """
+<svg viewBox="0 0 112 112" fill="none" xmlns="http://www.w3.org/2000/svg"
+     role="img" aria-label="StreamFetch">
+  <rect x="3" y="3" width="106" height="106" rx="31" fill="#17141D"
+        stroke="#17141D" stroke-width="6"/>
+  <path d="M24 41C24 31.6112 31.6112 24 41 24H88V43H45V49H72C81.3888
+        49 89 56.6112 89 66V71C89 80.3888 81.3888 88 72 88H24V69H68V63H41C31.6112
+        63 24 55.3888 24 46V41Z" fill="#CBA8FF"/>
+  <circle cx="87" cy="25" r="10" fill="#FFD65A"/>
+</svg>
+"""
+
+
+def hero_html(translate=lambda text: text) -> str:
+    description = translate(
+        "A focused local home for permitted YouTube and SoundCloud downloads, "
+        "playlists, and the music you already own."
+    )
+    return f"""
 <header class="sf-appbar">
     <div class="sf-appbar__brand">
-        <span class="sf-logo">SF</span>
-        <div><strong>StreamFetch</strong><br><small>Local media studio · 1.0</small></div>
+        <span class="sf-logo">{LOGO_SVG}</span>
+        <div><strong>StreamFetch</strong><br><small>Local media studio · 1.1</small></div>
     </div>
     <div class="sf-appbar__status">
-        <span class="sf-status-dot"></span><small>Private on this device</small>
+        <span class="sf-status-dot"></span><small>{translate("Private on this device")}</small>
     </div>
 </header>
 <section class="sf-hero">
     <div class="sf-hero__copy">
-        <span class="sf-eyebrow">Download · Organize · Play</span>
-        <h1>Your media.<br><span>Your rules.</span></h1>
-        <p>A focused local home for permitted YouTube and SoundCloud downloads,
-        playlists, and the music you already own.</p>
+        <span class="sf-eyebrow">{translate("Download · Organize · Play")}</span>
+        <h1>{translate("Your media.")}<br><span>{translate("Your rules.")}</span></h1>
+        <p>{description}</p>
     </div>
     <div class="sf-hero__aside">
-        <span class="sf-pill sf-pill--accent">Local first</span>
+        <span class="sf-pill sf-pill--accent">{translate("Local first")}</span>
         <span class="sf-pill">YouTube + SoundCloud</span>
-        <span class="sf-pill">Powered by yt-dlp</span>
+        <span class="sf-pill">{translate("Powered by yt-dlp")}</span>
     </div>
 </section>
 """
 
-LEGAL_HTML = """
+
+def legal_html(translate=lambda text: text) -> str:
+    notice = translate(
+        "Only download media you created, that is in the public domain, or that you have "
+        "permission to download. Respect copyright, platform terms, and local law."
+    )
+    return f"""
 <div class="sf-legal">
     <span class="sf-legal__icon">⚖</span>
-    <span>Only download media you created, that is in the public domain, or that
-    you have permission to download. Respect copyright, platform terms, and local law.</span>
+    <span>{notice}</span>
 </div>
 """
 
-SIDEBAR_HEADER_HTML = """
+
+def sidebar_header_html(translate=lambda text: text) -> str:
+    return f"""
 <div class="sf-sidebar-brand">
-    <div class="sf-sidebar-brand__top"><span class="sf-logo">SF</span>
-    <strong>Download<br>studio.</strong></div>
-    <span>Format · quality · automation</span>
+    <div class="sf-sidebar-brand__top"><span class="sf-logo">{LOGO_SVG}</span>
+    <strong>{translate("Download studio.").replace(" ", "<br>", 1)}</strong></div>
+    <span>{translate("Format · quality · automation")}</span>
 </div>
 """
 
-LIBRARY_SIDEBAR_HTML = """
+
+def library_sidebar_html(translate=lambda text: text) -> str:
+    return f"""
 <div class="sf-sidebar-brand">
-    <div class="sf-sidebar-brand__top"><span class="sf-logo">SF</span>
-    <strong>Your<br>library.</strong></div>
-    <span>Search · filter · rediscover</span>
+    <div class="sf-sidebar-brand__top"><span class="sf-logo">{LOGO_SVG}</span>
+    <strong>{translate("Your library.").replace(" ", "<br>", 1)}</strong></div>
+    <span>{translate("Search · filter · rediscover")}</span>
 </div>
 """
+
+
+HERO_HTML = hero_html()
+LEGAL_HTML = legal_html()
+SIDEBAR_HEADER_HTML = sidebar_header_html()
+LIBRARY_SIDEBAR_HTML = library_sidebar_html()
 
 SOURCE_LABEL_HTML = '<div class="sf-section-label">New download</div>'
 PREVIEW_LABEL_HTML = '<div class="sf-section-label">Source preview</div>'

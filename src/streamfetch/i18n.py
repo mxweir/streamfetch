@@ -1,0 +1,192 @@
+"""Small, dependency-free UI internationalization layer."""
+
+# Translation entries intentionally keep source and target copy together.
+# ruff: noqa: E501
+
+from __future__ import annotations
+
+import locale
+from collections.abc import Mapping
+
+LANGUAGES = {"English": "en", "Deutsch": "de"}
+
+GERMAN: dict[str, str] = {
+    "Language": "Sprache",
+    "Download studio.": "Download-Studio.",
+    "Your library.": "Deine Mediathek.",
+    "Format · quality · automation": "Format · Qualität · Automatisierung",
+    "Search · filter · rediscover": "Suchen · Filtern · Wiederentdecken",
+    "Download · Organize · Play": "Laden · Ordnen · Abspielen",
+    "Your media.": "Deine Medien.",
+    "Your rules.": "Deine Regeln.",
+    "A focused local home for permitted YouTube and SoundCloud downloads, playlists, and the music you already own.": "Ein fokussiertes lokales Zuhause für erlaubte YouTube- und SoundCloud-Downloads, Playlists und deine eigene Musik.",
+    "Local first": "Lokal zuerst",
+    "Powered by yt-dlp": "Mit yt-dlp",
+    "Private on this device": "Privat auf diesem Gerät",
+    "Only download media you created, that is in the public domain, or that you have permission to download. Respect copyright, platform terms, and local law.": "Lade nur eigene, gemeinfreie oder ausdrücklich erlaubte Medien herunter. Beachte Urheberrecht, Plattformregeln und lokales Recht.",
+    "Media type": "Medientyp",
+    "video": "Video",
+    "audio": "Audio",
+    "Container": "Container",
+    "Maximum resolution": "Maximale Auflösung",
+    "Audio format": "Audioformat",
+    "Audio quality": "Audioqualität",
+    "Process playlists, channels, sets, and profiles": "Playlists, Kanäle, Sets und Profile verarbeiten",
+    "Limit collection size": "Sammlungsgröße begrenzen",
+    "Maximum items per source": "Maximale Elemente pro Quelle",
+    "Embed metadata": "Metadaten einbetten",
+    "Embed thumbnail": "Vorschaubild einbetten",
+    "Embed subtitles": "Untertitel einbetten",
+    "Subtitle languages": "Untertitelsprachen",
+    "Advanced": "Erweitert",
+    "Use cookies from browser": "Browser-Cookies verwenden",
+    "Concurrent fragments": "Parallele Fragmente",
+    "Limit bandwidth": "Bandbreite begrenzen",
+    "Bandwidth limit (MB/s)": "Bandbreitenlimit (MB/s)",
+    "Download a time range only": "Nur einen Zeitbereich laden",
+    "Start (seconds)": "Start (Sekunden)",
+    "End (seconds)": "Ende (Sekunden)",
+    "Split files by chapters": "Dateien nach Kapiteln teilen",
+    "Remove YouTube segments with SponsorBlock": "YouTube-Segmente mit SponsorBlock entfernen",
+    "Library folder": "Mediatheksordner",
+    "Search": "Suche",
+    "Title, artist, album, tag, or path": "Titel, Künstler, Album, Tag oder Pfad",
+    "Sort by": "Sortieren nach",
+    "newest": "Neueste",
+    "title": "Titel",
+    "artist": "Künstler",
+    "largest": "Größte",
+    "oldest": "Älteste",
+    "all": "Alle",
+    "Download studio": "Download-Studio",
+    "Paste one or more permitted links, choose a format, and let the queue run.": "Füge erlaubte Links ein, wähle ein Format und starte die Warteschlange.",
+    "New download": "Neuer Download",
+    "Output directory": "Ausgabeordner",
+    "YouTube or SoundCloud URLs": "YouTube- oder SoundCloud-URLs",
+    "SoundCloud sources are audio-only. Select **Audio** in the sidebar.": "SoundCloud-Quellen sind nur als Audio verfügbar. Wähle **Audio** in der Seitenleiste.",
+    "I have permission to download these items and accept responsibility for their use.": "Ich darf diese Inhalte herunterladen und übernehme die Verantwortung für ihre Nutzung.",
+    "Analyze": "Analysieren",
+    "Start download": "Download starten",
+    "Source preview": "Quellenvorschau",
+    "Select items": "Elemente auswählen",
+    "Selected": "Ausgewählt",
+    "Duration": "Dauer",
+    "Select all": "Alle auswählen",
+    "Clear selection": "Auswahl leeren",
+    "{count} of {total} selected": "{count} von {total} ausgewählt",
+    "First {count} entries": "Erste {count} Einträge",
+    "Your library": "Deine Mediathek",
+    "Everything downloaded, imported, organized, and ready to play.": "Alles heruntergeladen, importiert, organisiert und bereit zum Abspielen.",
+    "Local library": "Lokale Mediathek",
+    "Local media studio": "Lokales Medien-Studio",
+    "Refresh library": "Mediathek aktualisieren",
+    "Scanning local media…": "Lokale Medien werden durchsucht…",
+    "Library refreshed — {added} added, {updated} updated, {removed} removed.": "Mediathek aktualisiert — {added} hinzugefügt, {updated} aktualisiert, {removed} entfernt.",
+    "The library could not be opened: {error}": "Die Mediathek konnte nicht geöffnet werden: {error}",
+    "Watching {path}": "Überwacht {path}",
+    "Choose an item to open the floating player.": "Wähle ein Element, um den schwebenden Player zu öffnen.",
+    "Items": "Elemente",
+    "Audio": "Audio",
+    "Video": "Video",
+    "Artists": "Künstler",
+    "Storage": "Speicher",
+    "Library section": "Mediatheksbereich",
+    "Home": "Start",
+    "Browse": "Durchsuchen",
+    "Discover": "Entdecken",
+    "Favorites": "Favoriten",
+    "Playlists": "Playlists",
+    "History": "Verlauf",
+    "Fresh in your library": "Neu in deiner Mediathek",
+    "The newest additions, ready for a first listen.": "Die neuesten Zugänge, bereit für den ersten Durchlauf.",
+    "Your library is ready. Download something or import a media folder to begin.": "Deine Mediathek ist bereit. Lade etwas herunter oder importiere einen Medienordner.",
+    "Back on repeat": "Oft gehört",
+    "Your most-played tracks and videos.": "Deine meistgespielten Tracks und Videos.",
+    "No matching media found in this collection.": "Keine passenden Medien in dieser Sammlung gefunden.",
+    "Play collection": "Sammlung abspielen",
+    "Showing {shown} of {total} matching item(s).": "{shown} von {total} passenden Elementen",
+    "Play": "Abspielen",
+    "Play next": "Als Nächstes",
+    "Add to queue": "Zur Warteschlange",
+    "Queue": "Warteschlange",
+    "Add to playlist": "Zur Playlist hinzufügen",
+    "Add": "Hinzufügen",
+    "Remove from playlist": "Aus Playlist entfernen",
+    "More actions": "Weitere Aktionen",
+    "Edit display metadata": "Anzeigemetadaten bearbeiten",
+    "Saved locally; the media file stays unchanged.": "Lokal gespeichert; die Mediendatei bleibt unverändert.",
+    "Artist": "Künstler",
+    "Album": "Album",
+    "Rating": "Bewertung",
+    "Tags": "Tags",
+    "Save metadata": "Metadaten speichern",
+    "Unrated": "Unbewertet",
+    "Import a local media folder": "Lokalen Medienordner importieren",
+    "Import folder": "Ordner importieren",
+    "Folder to import": "Zu importierender Ordner",
+    "Explore your library": "Mediathek entdecken",
+    "Recently added": "Kürzlich hinzugefügt",
+    "Most played": "Meistgespielt",
+    "Highly rated": "Hoch bewertet",
+    "Unplayed": "Ungespielt",
+    "Albums": "Alben",
+    "Duplicates": "Duplikate",
+    "Workspace": "Arbeitsbereich",
+    "Download": "Download",
+    "Library": "Mediathek",
+    "Download activity": "Download-Aktivität",
+    "Clear finished": "Abgeschlossene entfernen",
+    "Pause": "Pausieren",
+    "Resume": "Fortsetzen",
+    "Retry": "Erneut versuchen",
+    "Downloads are saved locally and survive full app restarts.": "Downloads werden lokal gespeichert und überstehen vollständige App-Neustarts.",
+    "Queued {count} background download job(s).": "{count} Hintergrund-Download(s) eingereiht.",
+    "Visualizer": "Visualisierung",
+    "off": "Aus",
+    "spectrum": "Spektrum",
+    "waveform": "Wellenform",
+    "PLAY": "START",
+    "PAUSE": "PAUSE",
+    "SHUFFLE": "MISCHEN",
+    "CLEAR": "LEEREN",
+    "REPEAT": "WIEDERHOLEN",
+    "UP NEXT · DRAG TO REORDER": "ALS NÄCHSTES · ZIEHEN ZUM SORTIEREN",
+    "QUEUE EMPTY": "WARTESCHLANGE LEER",
+    "PLAYING": "LÄUFT",
+    "PAUSED": "PAUSIERT",
+    "PRESS PLAY": "START DRÜCKEN",
+}
+
+
+def default_language() -> str:
+    """Choose a friendly default from the operating-system locale."""
+
+    system_locale = locale.getlocale()[0] or ""
+    return "Deutsch" if system_locale.lower().startswith("de") else "English"
+
+
+def language_code(language: str | None) -> str:
+    return LANGUAGES.get(language or "English", language or "en")
+
+
+def translate(text: str, language: str | None = None, **values: object) -> str:
+    """Translate known UI copy and safely interpolate named values."""
+
+    translated = GERMAN.get(text, text) if language_code(language) == "de" else text
+    return translated.format(**values) if values else translated
+
+
+def player_labels(language: str | None = None) -> Mapping[str, str]:
+    return {
+        "play": translate("PLAY", language),
+        "pause": translate("PAUSE", language),
+        "shuffle": translate("SHUFFLE", language),
+        "clear": translate("CLEAR", language),
+        "repeat": translate("REPEAT", language),
+        "up_next": translate("UP NEXT · DRAG TO REORDER", language),
+        "queue_empty": translate("QUEUE EMPTY", language),
+        "playing": translate("PLAYING", language),
+        "paused": translate("PAUSED", language),
+        "press_play": translate("PRESS PLAY", language),
+        "visualizer": translate("Visualizer", language),
+    }

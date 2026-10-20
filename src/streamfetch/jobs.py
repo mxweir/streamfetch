@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import threading
 import time
 import uuid
@@ -12,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from streamfetch.downloader import Downloader
-from streamfetch.models import DownloadRequest, DownloadResult, ProgressEvent
+from streamfetch.models import DownloadRequest, DownloadResult, MediaType, ProgressEvent
 
 
 class JobStatus(StrEnum):
@@ -59,7 +61,12 @@ class _DownloadJob:
 class DownloadJobManager:
     """Execute individual source downloads concurrently and expose snapshots."""
 
-    def __init__(self, max_workers: int = 2, downloader_factory=Downloader):
+    def __init__(
+        self,
+        max_workers: int = 2,
+        downloader_factory=Downloader,
+        state_path: Path | None = None,
+    ):
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers,
             thread_name_prefix="streamfetch",
@@ -67,6 +74,9 @@ class DownloadJobManager:
         self._downloader_factory = downloader_factory
         self._jobs: dict[str, _DownloadJob] = {}
         self._lock = threading.RLock()
+        self._state_path = Path(state_path).expanduser().resolve() if state_path else None
+        self._last_persisted_at = 0.0
+        self._load()
 
     def submit(self, request: DownloadRequest) -> tuple[str, ...]:
         job_ids = []
@@ -74,6 +84,7 @@ class DownloadJobManager:
             job = _DownloadJob(uuid.uuid4().hex[:12], replace(request, urls=(url,)))
             with self._lock:
                 self._jobs[job.id] = job
+                self._persist_locked()
                 job.future = self._executor.submit(self._run, job.id)
             job_ids.append(job.id)
         return tuple(job_ids)
@@ -90,6 +101,7 @@ class DownloadJobManager:
             else:
                 job.status = JobStatus.PAUSING
                 job.message = "Pausing after the current fragment…"
+            self._persist_locked()
 
     def resume(self, job_id: str) -> None:
         with self._lock:
@@ -101,6 +113,7 @@ class DownloadJobManager:
             job.message = "Queued to resume"
             job.error = None
             job.future = self._executor.submit(self._run, job.id)
+            self._persist_locked()
 
     def retry(self, job_id: str) -> None:
         self.resume(job_id)
@@ -119,6 +132,7 @@ class DownloadJobManager:
             ]
             for job_id in removable:
                 del self._jobs[job_id]
+            self._persist_locked()
 
     def wait(self, job_id: str, timeout: float = 10) -> DownloadJobSnapshot:
         with self._lock:
@@ -129,6 +143,8 @@ class DownloadJobManager:
             return self._snapshot(self._jobs[job_id])
 
     def shutdown(self) -> None:
+        with self._lock:
+            self._persist_locked()
         self._executor.shutdown(wait=False, cancel_futures=True)
 
     def _run(self, job_id: str) -> None:
@@ -139,6 +155,7 @@ class DownloadJobManager:
                 return
             job.status = JobStatus.RUNNING
             job.message = "Preparing download…"
+            self._persist_locked()
 
         def on_progress(event: ProgressEvent) -> None:
             with self._lock:
@@ -150,6 +167,7 @@ class DownloadJobManager:
                 active_job.filename = event.filename
                 active_job.speed_bytes_per_second = event.speed_bytes_per_second
                 active_job.eta_seconds = event.eta_seconds
+                self._persist_locked(throttle=True)
 
         try:
             result = self._downloader_factory().download(job.request, on_progress)
@@ -163,6 +181,7 @@ class DownloadJobManager:
                     job.status = JobStatus.FAILED
                     job.message = "Download failed"
                     job.error = str(exc)
+                self._persist_locked()
             return
 
         self._complete(job, result)
@@ -174,6 +193,41 @@ class DownloadJobManager:
             job.message = "Complete"
             job.files = result.files
             job.error = None
+            self._persist_locked()
+
+    def _load(self) -> None:
+        if self._state_path is None or not self._state_path.exists():
+            return
+        try:
+            payload = json.loads(self._state_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        for record in payload.get("jobs", []):
+            try:
+                job = _job_from_record(record)
+            except (KeyError, TypeError, ValueError):
+                continue
+            if job.status in {JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.PAUSING}:
+                job.status = JobStatus.PAUSED
+                job.message = "Recovered after restart — resume to continue"
+                job.error = None
+            self._jobs[job.id] = job
+
+    def _persist_locked(self, *, throttle: bool = False) -> None:
+        if self._state_path is None:
+            return
+        now = time.monotonic()
+        if throttle and now - self._last_persisted_at < 0.75:
+            return
+        self._state_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "version": 1,
+            "jobs": [_job_record(job) for job in self._jobs.values()],
+        }
+        temporary = self._state_path.with_suffix(f"{self._state_path.suffix}.tmp")
+        temporary.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        temporary.replace(self._state_path)
+        self._last_persisted_at = now
 
     @staticmethod
     def _snapshot(job: _DownloadJob) -> DownloadJobSnapshot:
@@ -194,3 +248,82 @@ class DownloadJobManager:
 
 class _PauseRequested(RuntimeError):
     pass
+
+
+def default_job_state_path() -> Path:
+    """Return the local state file used by the Streamlit and desktop apps."""
+
+    configured = os.environ.get("STREAMFETCH_STATE_DIR")
+    state_dir = Path(configured).expanduser() if configured else Path.home() / ".streamfetch"
+    return state_dir / "download-jobs.json"
+
+
+def _job_record(job: _DownloadJob) -> dict[str, Any]:
+    request = job.request
+    return {
+        "id": job.id,
+        "request": {
+            "urls": list(request.urls),
+            "output_dir": str(request.output_dir),
+            "media_type": request.media_type.value,
+            "container": request.container,
+            "quality": request.quality,
+            "allow_playlists": request.allow_playlists,
+            "max_items": request.max_items,
+            "embed_metadata": request.embed_metadata,
+            "embed_thumbnail": request.embed_thumbnail,
+            "embed_subtitles": request.embed_subtitles,
+            "subtitle_languages": list(request.subtitle_languages),
+            "cookie_browser": request.cookie_browser,
+            "concurrent_fragments": request.concurrent_fragments,
+            "rate_limit": request.rate_limit,
+            "download_sections": list(request.download_sections),
+            "split_chapters": request.split_chapters,
+            "sponsorblock_remove": list(request.sponsorblock_remove),
+        },
+        "status": job.status.value,
+        "progress": job.progress,
+        "message": job.message,
+        "filename": job.filename,
+        "speed_bytes_per_second": job.speed_bytes_per_second,
+        "eta_seconds": job.eta_seconds,
+        "files": [str(path) for path in job.files],
+        "error": job.error,
+        "created_at": job.created_at,
+    }
+
+
+def _job_from_record(record: dict[str, Any]) -> _DownloadJob:
+    request_data = record["request"]
+    request = DownloadRequest(
+        urls=tuple(request_data["urls"]),
+        output_dir=Path(request_data["output_dir"]),
+        media_type=MediaType(request_data["media_type"]),
+        container=request_data["container"],
+        quality=request_data["quality"],
+        allow_playlists=bool(request_data.get("allow_playlists", True)),
+        max_items=request_data.get("max_items"),
+        embed_metadata=bool(request_data.get("embed_metadata", True)),
+        embed_thumbnail=bool(request_data.get("embed_thumbnail", True)),
+        embed_subtitles=bool(request_data.get("embed_subtitles", False)),
+        subtitle_languages=tuple(request_data.get("subtitle_languages", ("en",))),
+        cookie_browser=request_data.get("cookie_browser"),
+        concurrent_fragments=int(request_data.get("concurrent_fragments", 4)),
+        rate_limit=request_data.get("rate_limit"),
+        download_sections=tuple(request_data.get("download_sections", ())),
+        split_chapters=bool(request_data.get("split_chapters", False)),
+        sponsorblock_remove=tuple(request_data.get("sponsorblock_remove", ())),
+    )
+    return _DownloadJob(
+        id=str(record["id"]),
+        request=request,
+        status=JobStatus(record.get("status", JobStatus.PAUSED.value)),
+        progress=float(record.get("progress", 0.0)),
+        message=str(record.get("message", "Recovered")),
+        filename=record.get("filename"),
+        speed_bytes_per_second=record.get("speed_bytes_per_second"),
+        eta_seconds=record.get("eta_seconds"),
+        files=tuple(Path(value) for value in record.get("files", ())),
+        error=record.get("error"),
+        created_at=float(record.get("created_at", time.time())),
+    )
