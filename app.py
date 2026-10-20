@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import html
 import shutil
+import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
@@ -15,11 +18,14 @@ from streamfetch.config import (
     validate_request,
 )
 from streamfetch.downloader import Downloader, DownloaderError
+from streamfetch.library import MediaItem, MediaLibrary
 from streamfetch.models import DownloadRequest, MediaType, ProgressEvent
 from streamfetch.theme import (
     APP_CSS,
     HERO_HTML,
     LEGAL_HTML,
+    LIBRARY_LABEL_HTML,
+    LIBRARY_SIDEBAR_HTML,
     PREVIEW_LABEL_HTML,
     RESULT_LABEL_HTML,
     SIDEBAR_HEADER_HTML,
@@ -41,7 +47,7 @@ def render_preview(preview) -> None:
         left, right = st.columns([1, 3])
         with left:
             if preview.thumbnail:
-                st.image(preview.thumbnail, use_container_width=True)
+                st.image(preview.thumbnail, width="stretch")
         with right:
             st.subheader(preview.title)
             details = [preview.source_type]
@@ -64,6 +70,10 @@ def format_duration(seconds: int | None) -> str:
     hours, minutes = divmod(minutes, 60)
     value = f"{hours}:{minutes:02d}:{remainder:02d}" if hours else f"{minutes}:{remainder:02d}"
     return f" — {value}"
+
+
+def default_download_dir() -> str:
+    return str((Path.cwd() / "downloads").resolve())
 
 
 def build_request(urls: tuple[str, ...]) -> DownloadRequest:
@@ -105,7 +115,7 @@ def build_request(urls: tuple[str, ...]) -> DownloadRequest:
     return request
 
 
-def render_sidebar() -> None:
+def render_download_sidebar() -> None:
     with st.sidebar:
         st.markdown(SIDEBAR_HEADER_HTML, unsafe_allow_html=True)
         st.radio("Media type", ["video", "audio"], horizontal=True, key="media_type")
@@ -172,14 +182,37 @@ def render_sidebar() -> None:
             )
 
 
-def main() -> None:
-    render_header()
-    render_sidebar()
+def render_library_sidebar() -> None:
+    with st.sidebar:
+        st.markdown(LIBRARY_SIDEBAR_HTML, unsafe_allow_html=True)
+        default_dir = st.session_state.get("output_dir", default_download_dir())
+        st.text_input("Library folder", value=default_dir, key="library_dir")
+        st.divider()
+        st.text_input(
+            "Search",
+            placeholder="Title, artist, album, or path",
+            key="library_search",
+        )
+        st.selectbox(
+            "Media type",
+            ["all", "audio", "video"],
+            format_func=str.title,
+            key="library_media_type",
+        )
+        st.selectbox(
+            "Sort by",
+            ["newest", "title", "artist", "largest", "oldest"],
+            format_func=str.title,
+            key="library_sort",
+        )
+
+
+def render_download_view() -> None:
+    render_download_sidebar()
 
     with st.container(border=True):
         st.markdown(SOURCE_LABEL_HTML, unsafe_allow_html=True)
-        default_dir = str((Path.cwd() / "downloads").resolve())
-        st.text_input("Output directory", value=default_dir, key="output_dir")
+        st.text_input("Output directory", value=default_download_dir(), key="output_dir")
         raw_urls = st.text_area(
             "YouTube or SoundCloud URLs",
             height=160,
@@ -198,9 +231,9 @@ def main() -> None:
         )
 
         analyze_col, download_col, _ = st.columns([1, 1, 2])
-        analyze_clicked = analyze_col.button("Analyze", use_container_width=True)
+        analyze_clicked = analyze_col.button("Analyze", width="stretch")
         download_clicked = download_col.button(
-            "Start download", type="primary", use_container_width=True, disabled=not accepted
+            "Start download", type="primary", width="stretch", disabled=not accepted
         )
 
     if analyze_clicked:
@@ -211,6 +244,118 @@ def main() -> None:
             render_preview(preview)
     if download_clicked:
         download(raw_urls)
+
+
+def render_library_view() -> None:
+    render_library_sidebar()
+    root = Path(st.session_state.library_dir).expanduser().resolve()
+    library = MediaLibrary(root)
+
+    st.markdown(LIBRARY_LABEL_HTML, unsafe_allow_html=True)
+    refresh_col, path_col = st.columns([1, 3])
+    refresh_clicked = refresh_col.button(
+        "Refresh library",
+        type="primary",
+        width="stretch",
+    )
+    path_col.caption(f"Watching {root}")
+
+    scan_needed = (
+        not library.database_path.exists()
+        or st.session_state.get("library_scanned_root") != str(root)
+    )
+    try:
+        if scan_needed or refresh_clicked:
+            with st.spinner("Scanning local media…"):
+                summary = library.scan()
+            st.session_state.library_scanned_root = str(root)
+            if refresh_clicked or summary.added or summary.updated or summary.removed:
+                st.success(
+                    "Library refreshed — "
+                    f"{summary.added} added, {summary.updated} updated, "
+                    f"{summary.removed} removed."
+                )
+
+        stats = library.stats()
+        search = st.session_state.library_search
+        media_type = st.session_state.library_media_type
+        total_matches = library.count_items(search, media_type)
+        items = library.list_items(
+            search=search,
+            media_type=media_type,
+            sort=st.session_state.library_sort,
+        )
+    except (OSError, sqlite3.Error) as exc:
+        st.error(f"The library could not be opened: {exc}")
+        return
+
+    metric_columns = st.columns(5)
+    metric_columns[0].metric("Items", stats.total)
+    metric_columns[1].metric("Audio", stats.audio)
+    metric_columns[2].metric("Video", stats.video)
+    metric_columns[3].metric("Artists", stats.artists)
+    metric_columns[4].metric("Storage", human_size(stats.size_bytes))
+
+    if not items:
+        st.info(
+            "No matching media found. Download something first or choose another library folder."
+        )
+        return
+
+    shown = len(items)
+    st.caption(f"Showing {shown} of {total_matches} matching item(s).")
+    for start in range(0, shown, 3):
+        columns = st.columns(3)
+        for column, item in zip(columns, items[start : start + 3], strict=False):
+            with column:
+                render_library_item(item)
+
+
+def render_library_item(item: MediaItem) -> None:
+    with st.container(border=True):
+        st.markdown('<span class="sf-library-card-marker"></span>', unsafe_allow_html=True)
+        if item.cover_path and item.cover_path.exists():
+            st.image(str(item.cover_path), width="stretch")
+        else:
+            icon = "♫" if item.media_type == "audio" else "▶"
+            st.markdown(
+                f'<div class="sf-cover-placeholder"><span>{icon}</span></div>',
+                unsafe_allow_html=True,
+            )
+
+        title = html.escape(item.title)
+        artist = html.escape(item.artist)
+        album = html.escape(item.album)
+        st.markdown(
+            f'<div class="sf-media-title">{title}</div>'
+            f'<div class="sf-media-artist">{artist}</div>'
+            f'<div class="sf-media-album">{album}</div>',
+            unsafe_allow_html=True,
+        )
+        details = [item.format, item.media_type.upper(), human_size(item.size_bytes)]
+        if item.duration_seconds:
+            details.append(format_duration(int(item.duration_seconds)).removeprefix(" — "))
+        st.caption(" · ".join(details))
+        modified = datetime.fromtimestamp(item.modified_at).strftime("%Y-%m-%d %H:%M")
+        with st.expander("File details"):
+            st.caption(f"Modified {modified}")
+            st.code(str(item.path), language=None)
+
+
+def main() -> None:
+    render_header()
+    st.markdown('<div class="sf-nav-label">Choose your workspace</div>', unsafe_allow_html=True)
+    workspace = st.radio(
+        "Workspace",
+        ["Download", "Library"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="workspace",
+    )
+    if workspace == "Library":
+        render_library_view()
+    else:
+        render_download_view()
 
 
 def analyze(raw_urls: str) -> None:
@@ -259,6 +404,7 @@ def download(raw_urls: str) -> None:
         f"Created {len(result.files)} file(s) in {result.elapsed_seconds:.1f} seconds. "
         f"Saved under {result.output_dir}"
     )
+    st.session_state.pop("library_scanned_root", None)
     if result.files:
         st.markdown(RESULT_LABEL_HTML, unsafe_allow_html=True)
         rows = [
@@ -268,7 +414,7 @@ def download(raw_urls: str) -> None:
             }
             for path in result.files
         ]
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        st.dataframe(rows, width="stretch", hide_index=True)
     else:
         st.info("No new files were created. They may already be listed in the download archive.")
 
