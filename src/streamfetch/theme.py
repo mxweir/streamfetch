@@ -251,6 +251,12 @@ p, label, [data-testid="stMarkdownContainer"] {
 ),
 [data-testid="stVerticalBlock"]:has(
     > [data-testid="stElementContainer"] .sf-library-card-marker
+),
+[data-testid="stVerticalBlock"]:has(
+    > [data-testid="stElementContainer"] .sf-player-marker
+),
+[data-testid="stVerticalBlock"]:has(
+    > [data-testid="stElementContainer"] .sf-history-marker
 ) {
     border: 1.5px solid var(--sf-black) !important;
     border-radius: 30px !important;
@@ -260,7 +266,38 @@ p, label, [data-testid="stMarkdownContainer"] {
 }
 
 .sf-card-marker,
-.sf-library-card-marker { display: none; }
+.sf-library-card-marker,
+.sf-player-marker,
+.sf-history-marker { display: none; }
+
+[data-testid="stVerticalBlock"]:has(
+    > [data-testid="stElementContainer"] .sf-player-marker
+) {
+    margin: 1rem 0 1.5rem;
+    background: var(--sf-lavender);
+}
+
+.sf-player-kicker {
+    display: inline-block;
+    margin-bottom: 0.35rem;
+    padding: 0.4rem 0.65rem;
+    border: 1.5px solid var(--sf-black);
+    border-radius: 9999px;
+    background: var(--sf-yellow);
+    color: var(--sf-black);
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+[data-testid="stAudio"] audio,
+[data-testid="stVideo"] video {
+    width: 100%;
+    border: 1.5px solid var(--sf-black);
+    border-radius: 18px;
+    background: var(--sf-black);
+}
 
 .sf-nav-label {
     margin: 0.25rem 0 0.5rem;

@@ -26,6 +26,9 @@ pastel paper surfaces, bold display type, sticker colors, and black outlined con
 - Persistent local media library backed by a rebuildable SQLite index
 - Folder scanning with metadata, embedded cover art, search, filters, and sorting
 - Library statistics for audio, video, artists, and storage use
+- Built-in local audio/video player with persistent current-item state
+- Persistent queue with previous/next controls
+- Favorites, custom playlists, and local play history
 - Video output as MP4, MKV, or WebM
 - Audio output as MP3, M4A, Opus, FLAC, or WAV
 - Configurable video resolution and audio quality
@@ -90,6 +93,16 @@ extracts embedded titles, artists, albums, durations, and artwork where the file
 format provides them. Search and filtering happen locally and no library data is
 uploaded.
 
+Select any library item to open it in the player. The current item, queue,
+favorites, playlists, and the latest 5,000 play actions are stored locally in
+the same SQLite database. Removing a missing media file during a refresh also
+removes its associated library state; StreamFetch never deletes the media file
+itself.
+
+Browser autoplay rules may require one manual press of the native player after
+navigation. Queue advancement is triggered with the **Next** control; seamless
+gapless playback is planned for a future dedicated browser component.
+
 ## Docker
 
 ```bash
@@ -123,7 +136,7 @@ controls.
 
 ## Roadmap
 
-- Persistent player queue, playlists, favorites, and play history
+- Dedicated gapless player component with automatic queue advancement
 - Resumable background queue
 - Per-item selection before downloading a playlist
 - Optional desktop packaging

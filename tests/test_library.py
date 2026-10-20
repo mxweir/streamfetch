@@ -76,3 +76,80 @@ def test_rescan_updates_changed_file_without_resetting_library(library):
     assert summary.updated == 1
     assert summary.removed == 0
     assert library.list_items()[0].size_bytes == len(b"after and larger")
+
+
+def test_favorites_queue_and_current_item_persist(library):
+    first = library.root / "first.mp3"
+    second = library.root / "second.mp3"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+    library.scan()
+
+    assert library.toggle_favorite(first) is True
+    library.enqueue(first)
+    second_queue_id = library.enqueue(second)
+    library.set_current_item(second)
+
+    reopened = MediaLibrary(library.root)
+    assert reopened.favorite_paths() == {"first.mp3"}
+    assert reopened.current_item().path == second
+    assert [entry.item.path.name for entry in reopened.queue()] == ["first.mp3", "second.mp3"]
+    assert reopened.take_queue_entry(second_queue_id).path == second
+    assert [entry.item.path.name for entry in reopened.queue()] == ["first.mp3"]
+    reopened.clear_queue()
+    assert reopened.queue() == ()
+    assert reopened.toggle_favorite(first) is False
+
+
+def test_playlists_and_history(library):
+    first = library.root / "first.mp3"
+    second = library.root / "second.mp3"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+    library.scan()
+
+    playlist = library.create_playlist("Road Trip")
+    library.add_to_playlist(playlist.id, first)
+    library.add_to_playlist(playlist.id, second)
+    library.add_to_playlist(playlist.id, first)
+    library.record_play(first)
+    library.record_play(second)
+
+    assert library.playlists()[0].item_count == 2
+    assert [item.path.name for item in library.playlist_items(playlist.id)] == [
+        "first.mp3",
+        "second.mp3",
+    ]
+    assert [entry.item.path.name for entry in library.history()] == [
+        "second.mp3",
+        "first.mp3",
+    ]
+    assert library.previous_item(second).path == first
+
+    library.remove_from_playlist(playlist.id, first)
+    assert [item.path.name for item in library.playlist_items(playlist.id)] == ["second.mp3"]
+    with pytest.raises(ValueError, match="already exists"):
+        library.create_playlist("road trip")
+    library.delete_playlist(playlist.id)
+    assert library.playlists() == ()
+
+
+def test_missing_media_cascades_through_collections(library):
+    track = library.root / "temporary.mp3"
+    track.write_bytes(b"temporary")
+    library.scan()
+    playlist = library.create_playlist("Temporary")
+    library.add_to_playlist(playlist.id, track)
+    library.toggle_favorite(track)
+    library.enqueue(track)
+    library.record_play(track)
+    library.set_current_item(track)
+
+    track.unlink()
+    library.scan()
+
+    assert library.favorite_items() == ()
+    assert library.queue() == ()
+    assert library.playlist_items(playlist.id) == ()
+    assert library.history() == ()
+    assert library.current_item() is None
