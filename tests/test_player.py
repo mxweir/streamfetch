@@ -1,0 +1,89 @@
+from pathlib import Path
+
+from streamfetch.library import MediaItem, QueueEntry
+from streamfetch.player import build_player_data, media_mime_type, media_url
+
+
+class FakeMediaManager:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, str]] = []
+
+    def add(self, path: str, mime_type: str, coordinate: str) -> str:
+        self.calls.append((path, mime_type, coordinate))
+        return f"/media/{Path(path).name}"
+
+
+def media_item(path: str, media_type: str = "audio", format_name: str = "MP3") -> MediaItem:
+    return MediaItem(
+        path=Path(path),
+        title=Path(path).stem.title(),
+        artist="Open Audio",
+        album="Player Tests",
+        duration_seconds=30.0,
+        size_bytes=1024,
+        media_type=media_type,
+        format=format_name,
+        modified_at=1.0,
+        added_at=1.0,
+    )
+
+
+def test_media_mime_type_supports_audio_and_video() -> None:
+    assert media_mime_type(media_item("track.opus", format_name="OPUS")) == "audio/ogg"
+    assert (
+        media_mime_type(media_item("clip.webm", media_type="video", format_name="WEBM"))
+        == "video/webm"
+    )
+
+
+def test_media_url_registers_local_file() -> None:
+    manager = FakeMediaManager()
+    item = media_item("/tmp/track.mp3")
+
+    url = media_url(item, "player-current", manager)
+
+    assert url == "/media/track.mp3"
+    assert manager.calls == [("/tmp/track.mp3", "audio/mpeg", "player-current")]
+
+
+def test_build_player_data_preloads_next_queue_entry() -> None:
+    manager = FakeMediaManager()
+    current = media_item("/music/current.mp3")
+    queued = QueueEntry(42, media_item("/music/next.mp3"))
+
+    data = build_player_data(
+        current,
+        queued,
+        favorite=True,
+        can_previous=False,
+        autoplay=True,
+        queue_count=3,
+        media_manager=manager,
+    )
+
+    assert data["current"]["url"] == "/media/current.mp3"
+    assert data["next"]["url"] == "/media/next.mp3"
+    assert data["next"]["entry_id"] == 42
+    assert data["favorite"] is True
+    assert data["can_previous"] is False
+    assert data["autoplay"] is True
+    assert data["queue_count"] == 3
+    assert [call[2] for call in manager.calls] == [
+        "streamfetch-player-current",
+        "streamfetch-player-next",
+    ]
+
+
+def test_build_player_data_without_queue_has_no_next_track() -> None:
+    data = build_player_data(
+        media_item("/music/current.mp3"),
+        None,
+        favorite=False,
+        can_previous=True,
+        autoplay=False,
+        queue_count=0,
+        media_manager=FakeMediaManager(),
+    )
+
+    assert data["next"] is None
+    assert data["queue_count"] == 0
