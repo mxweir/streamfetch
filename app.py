@@ -250,7 +250,7 @@ def render_library_sidebar() -> None:
         st.divider()
         st.text_input(
             "Search",
-            placeholder="Title, artist, album, or path",
+            placeholder="Title, artist, album, tag, or path",
             key="library_search",
         )
         st.selectbox(
@@ -337,7 +337,7 @@ def render_library_view() -> None:
                     f"{summary.added} added, {summary.updated} updated, "
                     f"{summary.removed} removed."
                 )
-
+        render_library_import(library)
         stats = library.stats()
     except (OSError, sqlite3.Error) as exc:
         st.error(f"The library could not be opened: {exc}")
@@ -354,7 +354,7 @@ def render_library_view() -> None:
 
     section = st.radio(
         "Library section",
-        ["Browse", "Favorites", "Playlists", "History"],
+        ["Browse", "Discover", "Favorites", "Playlists", "History"],
         horizontal=True,
         label_visibility="collapsed",
         key="library_section",
@@ -364,6 +364,9 @@ def render_library_view() -> None:
         return
     if section == "Playlists":
         render_playlists(library)
+        return
+    if section == "Discover":
+        render_discover(library)
         return
 
     search = st.session_state.library_search
@@ -440,6 +443,13 @@ def render_library_item(
         if item.duration_seconds:
             details.append(format_duration(int(item.duration_seconds)).removeprefix(" — "))
         st.caption(" · ".join(details))
+        if item.rating or item.tags:
+            annotations = []
+            if item.rating:
+                annotations.append("★" * item.rating + "☆" * (5 - item.rating))
+            if item.tags:
+                annotations.append(" · ".join(f"#{tag}" for tag in item.tags))
+            st.caption("  ".join(annotations))
 
         play_col, favorite_col = st.columns(2)
         if play_col.button("▶ Play", key=f"play_{item_key}", width="stretch"):
@@ -487,6 +497,148 @@ def render_library_item(
         with st.expander("File details"):
             st.caption(f"Modified {modified}")
             st.code(str(item.path), language=None)
+        render_metadata_editor(library, item, item_key)
+
+
+def render_metadata_editor(library: MediaLibrary, item: MediaItem, item_key: str) -> None:
+    with st.expander("Edit metadata"):
+        st.caption("Edits are stored in the local library database; the media file is unchanged.")
+        with st.form(f"metadata_{item_key}"):
+            title = st.text_input("Title", value=item.title)
+            artist = st.text_input("Artist", value=item.artist)
+            album = st.text_input("Album", value=item.album)
+            rating = st.select_slider(
+                "Rating",
+                options=[0, 1, 2, 3, 4, 5],
+                value=item.rating,
+                format_func=lambda value: "Unrated" if value == 0 else "★" * value,
+            )
+            tags = st.text_input(
+                "Tags",
+                value=", ".join(item.tags),
+                placeholder="focus, live, workout",
+            )
+            submitted = st.form_submit_button("Save metadata", width="stretch")
+        if submitted:
+            try:
+                library.update_metadata(
+                    item.path,
+                    title=title,
+                    artist=artist,
+                    album=album,
+                    rating=rating,
+                    tags=[tag for tag in tags.split(",")],
+                )
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                st.toast("Metadata saved.")
+                st.rerun()
+
+
+def render_library_import(library: MediaLibrary) -> None:
+    with st.expander("Import a local media folder"):
+        st.caption(
+            "Supported audio and video files are copied into Imported/ while preserving folders."
+        )
+        source = st.text_input(
+            "Folder to import",
+            placeholder="/Users/you/Music",
+            key="library_import_source",
+        )
+        if st.button("Import folder", key="library_import_button", width="stretch"):
+            try:
+                with st.spinner("Copying media into the library…"):
+                    summary = library.import_folder(source)
+                    library.scan()
+            except (OSError, ValueError, sqlite3.Error) as exc:
+                st.error(f"Import failed: {exc}")
+            else:
+                st.success(
+                    f"Imported {summary.imported} file(s), skipped {summary.skipped}; "
+                    f"saved under {summary.destination}."
+                )
+
+
+def render_discover(library: MediaLibrary) -> None:
+    mode = st.selectbox(
+        "Explore your library",
+        [
+            "Recently added",
+            "Most played",
+            "Highly rated",
+            "Unplayed",
+            "Artists",
+            "Albums",
+            "Duplicates",
+        ],
+        key="library_discover_mode",
+    )
+    search = st.session_state.library_search
+    media_type = st.session_state.library_media_type
+    sort = st.session_state.library_sort
+
+    if mode == "Artists":
+        facets = library.artists()
+        if not facets:
+            st.info("No artists found yet.")
+            return
+        names = {facet.name: f"{facet.name} · {facet.item_count} item(s)" for facet in facets}
+        selected = st.selectbox("Artist", list(names), format_func=names.get)
+        items = library.items_for_artist(selected)
+    elif mode == "Albums":
+        facets = library.albums()
+        if not facets:
+            st.info("No albums found yet.")
+            return
+        names = {facet.name: f"{facet.name} · {facet.item_count} item(s)" for facet in facets}
+        selected = st.selectbox("Album", list(names), format_func=names.get)
+        items = library.items_for_album(selected)
+    elif mode == "Duplicates":
+        render_duplicates(library)
+        return
+    else:
+        items = {
+            "Recently added": library.recently_added,
+            "Most played": library.most_played,
+            "Highly rated": library.highly_rated,
+            "Unplayed": library.unplayed,
+        }[mode]()
+
+    collection_sort = sort if sort != "newest" else "collection"
+    items = filter_collection(items, search, media_type, collection_sort)
+    render_media_grid(library, items, len(items))
+
+
+def render_duplicates(library: MediaLibrary) -> None:
+    st.caption("Files are compared by size and SHA-256 content hash. Nothing is deleted.")
+    if st.button("Scan for exact duplicates", type="primary", key="scan_duplicates"):
+        with st.spinner("Hashing files with matching sizes…"):
+            groups = library.duplicate_groups()
+        st.session_state.library_duplicate_groups = [
+            [library.relative_path(item.path) for item in group] for group in groups
+        ]
+
+    stored_groups = st.session_state.get("library_duplicate_groups")
+    if stored_groups is None:
+        st.info("Start a scan to look for byte-identical files.")
+        return
+    groups = [
+        tuple(item for path in paths if (item := library.item_for_path(path)) is not None)
+        for paths in stored_groups
+    ]
+    groups = [group for group in groups if len(group) > 1]
+    if not groups:
+        st.success("No exact duplicates found.")
+        return
+    st.warning(f"Found {len(groups)} duplicate group(s). Review the paths before cleanup.")
+    for index, group in enumerate(groups, start=1):
+        with st.expander(
+            f"Duplicate group {index} · {human_size(group[0].size_bytes)}",
+            expanded=index == 1,
+        ):
+            for item in group:
+                st.code(str(item.path), language=None)
 
 
 def render_media_art(item: MediaItem) -> None:
@@ -702,7 +854,9 @@ def filter_collection(
         and (
             not query
             or query
-            in " ".join((item.title, item.artist, item.album, str(item.path))).casefold()
+            in " ".join(
+                (item.title, item.artist, item.album, *item.tags, str(item.path))
+            ).casefold()
         )
     ]
     if sort == "artist":
@@ -713,7 +867,7 @@ def filter_collection(
         filtered.sort(key=lambda item: item.modified_at)
     elif sort == "title":
         filtered.sort(key=lambda item: item.title.casefold())
-    else:
+    elif sort == "newest":
         filtered.sort(key=lambda item: item.modified_at, reverse=True)
     return tuple(filtered[:120])
 

@@ -1,4 +1,5 @@
 import random
+import sqlite3
 import wave
 
 import pytest
@@ -197,3 +198,122 @@ def test_player_settings_and_resume_position_persist(library):
     assert reopened.playback_position(track) == 42.5
     reopened.set_playback_position(track, 0)
     assert reopened.playback_position(track) == 0
+
+
+def test_metadata_smart_collections_and_artist_album_views(library):
+    first = library.root / "first.mp3"
+    second = library.root / "second.mp3"
+    third = library.root / "third.mp3"
+    first.write_bytes(b"one")
+    second.write_bytes(b"two")
+    third.write_bytes(b"three")
+    library.scan()
+
+    updated = library.update_metadata(
+        first,
+        title="First edit",
+        artist="Codex Club",
+        album="Local Hits",
+        rating=5,
+        tags=["focus", "night", "focus"],
+    )
+    library.update_metadata(
+        second,
+        title="Second edit",
+        artist="Codex Club",
+        album="Local Hits",
+        rating=4,
+        tags=["workout"],
+    )
+    library.record_play(first)
+    library.record_play(second)
+    library.record_play(first)
+
+    assert updated.title == "First edit"
+    assert updated.rating == 5
+    assert updated.tags == ("focus", "night")
+    assert [item.path.name for item in library.list_items(search="focus")] == ["first.mp3"]
+    assert [item.path.name for item in library.most_played()] == ["first.mp3", "second.mp3"]
+    assert {item.path.name for item in library.highly_rated()} == {"first.mp3", "second.mp3"}
+    assert [item.path.name for item in library.unplayed()] == ["third.mp3"]
+    assert library.artists()[0].name == "Codex Club"
+    assert library.artists()[0].item_count == 2
+    assert [item.path.name for item in library.items_for_artist("codex club")] == [
+        "first.mp3",
+        "second.mp3",
+    ]
+    assert [item.path.name for item in library.items_for_album("LOCAL HITS")] == [
+        "first.mp3",
+        "second.mp3",
+    ]
+
+    library.scan()
+    assert library.item_for_path(first).title == "First edit"
+    with pytest.raises(ValueError, match="Title cannot be empty"):
+        library.update_metadata(first, title=" ", artist="", album="")
+    with pytest.raises(ValueError, match="Rating"):
+        library.update_metadata(first, title="Title", artist="", album="", rating=6)
+
+
+def test_duplicate_detection_hashes_content(library):
+    original = library.root / "original.mp3"
+    copy = library.root / "copy.mp3"
+    same_size = library.root / "different.mp3"
+    original.write_bytes(b"same-content")
+    copy.write_bytes(b"same-content")
+    same_size.write_bytes(b"other-bytes!")
+    library.scan()
+
+    groups = library.duplicate_groups()
+
+    assert len(groups) == 1
+    assert {item.path.name for item in groups[0]} == {"original.mp3", "copy.mp3"}
+
+
+def test_import_folder_copies_media_and_skips_existing(tmp_path, monkeypatch):
+    monkeypatch.setattr("streamfetch.library.shutil.which", lambda _: None)
+    library = MediaLibrary(tmp_path / "library")
+    source = tmp_path / "source"
+    (source / "Album").mkdir(parents=True)
+    (source / "Album" / "song.mp3").write_bytes(b"song")
+    (source / "notes.txt").write_text("ignore")
+
+    first = library.import_folder(source)
+    second = library.import_folder(source)
+    summary = library.scan()
+
+    assert first.imported == 1
+    assert first.skipped == 0
+    assert second.imported == 0
+    assert second.skipped == 1
+    assert summary.total == 1
+    assert library.list_items()[0].path.relative_to(library.root).as_posix() == (
+        "Imported/source/Album/song.mp3"
+    )
+    with pytest.raises(ValueError, match="existing folder"):
+        library.import_folder("")
+    with pytest.raises(ValueError, match="outside"):
+        library.import_folder(library.root / "Imported")
+
+
+def test_existing_database_is_migrated_for_library_annotations(tmp_path, monkeypatch):
+    monkeypatch.setattr("streamfetch.library.shutil.which", lambda _: None)
+    library = MediaLibrary(tmp_path)
+    library.state_dir.mkdir(parents=True)
+
+    with sqlite3.connect(library.database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE media_items (
+                path TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT NOT NULL,
+                album TEXT NOT NULL, duration_seconds REAL, size_bytes INTEGER NOT NULL,
+                media_type TEXT NOT NULL, format TEXT NOT NULL, modified_at REAL NOT NULL,
+                added_at REAL NOT NULL, cover_path TEXT, source_url TEXT
+            )
+            """
+        )
+
+    assert library.stats().total == 0
+    with sqlite3.connect(library.database_path) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(media_items)")}
+    assert {"custom_title", "custom_artist", "custom_album", "rating", "tags_json"} <= columns

@@ -32,6 +32,9 @@ pastel paper surfaces, bold display type, sticker colors, and black outlined con
 - Smart queue with play-next, shuffle, repeat, drag-to-reorder, and collection playback
 - Configurable soft audio transitions and saved playback positions
 - Favorites, custom playlists, and local play history
+- Artist and album pages plus recently added, most played, rated, and unplayed views
+- Editable local titles, artists, albums, star ratings, and tags
+- Exact duplicate detection and recursive local-folder import
 - Video output as MP4, MKV, or WebM
 - Audio output as MP3, M4A, Opus, FLAC, or WAV
 - Configurable video resolution and audio quality
@@ -112,6 +115,17 @@ are stored locally in the same SQLite database. Removing a missing media file
 during a refresh also removes its associated library state; StreamFetch never
 deletes the media file itself. Browser autoplay rules can still require one
 manual press before the first playback in a new browser session.
+
+Open **Discover** for artist and album pages or dynamic smart collections:
+recently added, most played, highly rated, and unplayed. Each media card has a
+local metadata editor for display title, artist, album, a zero-to-five-star
+rating, and comma-separated tags. These edits stay in the library database and
+do not rewrite the media file. Search includes the edited fields and tags.
+
+The import tool recursively copies supported files into `Imported/` without
+altering the source folder. The duplicate scanner first groups files by size,
+then confirms exact matches with SHA-256; it reports paths for review and never
+deletes files.
 
 ## Background downloads
 
