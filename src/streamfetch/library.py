@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import shutil
 import sqlite3
 import subprocess
@@ -358,12 +359,20 @@ class MediaLibrary:
             ).fetchall()
         return tuple(self._item_from_row(row) for row in rows)
 
-    def enqueue(self, path: Path | str) -> int:
+    def enqueue(self, path: Path | str, *, play_next: bool = False) -> int:
         relative_path = self.relative_path(path)
         with self._connection() as connection:
+            if play_next:
+                position = connection.execute(
+                    "SELECT COALESCE(MIN(position), 1) - 1 FROM queue"
+                ).fetchone()[0]
+            else:
+                position = connection.execute(
+                    "SELECT COALESCE(MAX(position), 0) + 1 FROM queue"
+                ).fetchone()[0]
             cursor = connection.execute(
-                "INSERT INTO queue(path, created_at) VALUES (?, ?)",
-                (relative_path, time.time()),
+                "INSERT INTO queue(path, position, created_at) VALUES (?, ?, ?)",
+                (relative_path, position, time.time()),
             )
             return cursor.lastrowid
 
@@ -374,7 +383,7 @@ class MediaLibrary:
                 SELECT media_items.*, queue.id AS queue_id
                 FROM queue
                 JOIN media_items ON media_items.path = queue.path
-                ORDER BY queue.id
+                ORDER BY queue.position, queue.id
                 """
             ).fetchall()
         return tuple(QueueEntry(row["queue_id"], self._item_from_row(row)) for row in rows)
@@ -387,7 +396,7 @@ class MediaLibrary:
                     SELECT media_items.*, queue.id AS queue_id
                     FROM queue
                     JOIN media_items ON media_items.path = queue.path
-                    ORDER BY queue.id
+                    ORDER BY queue.position, queue.id
                     LIMIT 1
                     """
                 ).fetchone()
@@ -412,6 +421,83 @@ class MediaLibrary:
     def clear_queue(self) -> None:
         with self._connection() as connection:
             connection.execute("DELETE FROM queue")
+
+    def reorder_queue(self, entry_ids: list[int] | tuple[int, ...]) -> None:
+        with self._connection() as connection:
+            current_ids = {
+                row[0] for row in connection.execute("SELECT id FROM queue")
+            }
+            if len(entry_ids) != len(current_ids) or set(entry_ids) != current_ids:
+                raise ValueError("Queue order must contain every queued item exactly once.")
+            connection.executemany(
+                "UPDATE queue SET position = ? WHERE id = ?",
+                ((position, entry_id) for position, entry_id in enumerate(entry_ids, start=1)),
+            )
+
+    def shuffle_queue(self, randomizer: random.Random | None = None) -> None:
+        entry_ids = [entry.id for entry in self.queue()]
+        (randomizer or random.SystemRandom()).shuffle(entry_ids)
+        self.reorder_queue(entry_ids)
+
+    def replace_queue(self, paths: tuple[Path, ...] | list[Path]) -> None:
+        with self._connection() as connection:
+            connection.execute("DELETE FROM queue")
+            now = time.time()
+            rows = [
+                (self.relative_path(path), position, now)
+                for position, path in enumerate(paths, start=1)
+            ]
+            connection.executemany(
+                "INSERT INTO queue(path, position, created_at) VALUES (?, ?, ?)",
+                rows,
+            )
+
+    def player_setting(self, key: str, default: str) -> str:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT value FROM settings WHERE key = ?",
+                (f"player.{key}",),
+            ).fetchone()
+        return row[0] if row else default
+
+    def set_player_setting(self, key: str, value: str) -> None:
+        with self._connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO settings(key, value) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (f"player.{key}", value),
+            )
+
+    def playback_position(self, path: Path | str) -> float:
+        relative_path = self.relative_path(path)
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT position_seconds FROM playback_positions WHERE path = ?",
+                (relative_path,),
+            ).fetchone()
+        return float(row[0]) if row else 0.0
+
+    def set_playback_position(self, path: Path | str, position_seconds: float) -> None:
+        relative_path = self.relative_path(path)
+        with self._connection() as connection:
+            if position_seconds <= 0:
+                connection.execute(
+                    "DELETE FROM playback_positions WHERE path = ?",
+                    (relative_path,),
+                )
+                return
+            connection.execute(
+                """
+                INSERT INTO playback_positions(path, position_seconds, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(path) DO UPDATE SET
+                    position_seconds = excluded.position_seconds,
+                    updated_at = excluded.updated_at
+                """,
+                (relative_path, position_seconds, time.time()),
+            )
 
     def create_playlist(self, name: str) -> Playlist:
         clean_name = " ".join(name.split())
@@ -524,6 +610,7 @@ class MediaLibrary:
             CREATE TABLE IF NOT EXISTS queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 path TEXT NOT NULL REFERENCES media_items(path) ON DELETE CASCADE,
+                position INTEGER NOT NULL DEFAULT 0,
                 created_at REAL NOT NULL
             );
             CREATE TABLE IF NOT EXISTS playlists (
@@ -548,10 +635,24 @@ class MediaLibrary:
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS queue_order ON queue(id);
+            CREATE TABLE IF NOT EXISTS playback_positions (
+                path TEXT PRIMARY KEY REFERENCES media_items(path) ON DELETE CASCADE,
+                position_seconds REAL NOT NULL,
+                updated_at REAL NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS history_order ON play_history(id DESC);
             """
         )
+        queue_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(queue)")
+        }
+        if "position" not in queue_columns:
+            connection.execute(
+                "ALTER TABLE queue ADD COLUMN position INTEGER NOT NULL DEFAULT 0"
+            )
+            connection.execute("UPDATE queue SET position = id")
+        connection.execute("DROP INDEX IF EXISTS queue_order")
+        connection.execute("CREATE INDEX queue_order ON queue(position, id)")
         return connection
 
     @contextmanager

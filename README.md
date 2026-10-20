@@ -29,6 +29,8 @@ pastel paper surfaces, bold display type, sticker colors, and black outlined con
 - Custom continuous audio/video player with persistent current-item state
 - Automatic queue advancement with next-item preloading
 - Seek, volume, previous/next, favorite, and keyboard controls
+- Smart queue with play-next, shuffle, repeat, drag-to-reorder, and collection playback
+- Configurable soft audio transitions and saved playback positions
 - Favorites, custom playlists, and local play history
 - Video output as MP4, MKV, or WebM
 - Audio output as MP3, M4A, Opus, FLAC, or WAV
@@ -99,6 +101,8 @@ item is preloaded and starts automatically when the current item ends, including
 audio-to-video transitions. The player includes seeking, volume, favorites,
 previous/next navigation, and keyboard controls: **Space** toggles playback,
 **N** advances, **P** goes back, and the arrow keys seek by five seconds.
+Queue entries can be reordered directly in the player. Repeat and transition
+settings, queue order, and paused playback positions persist in the library.
 
 The current item, queue, favorites, playlists, and the latest 5,000 play actions
 are stored locally in the same SQLite database. Removing a missing media file
@@ -139,7 +143,7 @@ controls.
 
 ## Roadmap
 
-- Shuffle, repeat modes, and drag-to-reorder queue controls
+- Optional waveform and audio spectrum visualizations
 - Resumable background queue
 - Per-item selection before downloading a playlist
 - Optional desktop packaging

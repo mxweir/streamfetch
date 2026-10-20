@@ -46,6 +46,7 @@ PLAYER_HTML = """
     <button type="button" class="sf-player-play" data-play aria-label="Play">PLAY</button>
     <button type="button" data-next aria-label="Next queued item">&#8594;</button>
     <button type="button" data-favorite aria-label="Toggle favorite">&#9825;</button>
+    <button type="button" data-repeat aria-label="Change repeat mode">REPEAT OFF</button>
   </div>
   <div class="sf-player-footer">
     <label>
@@ -53,8 +54,12 @@ PLAYER_HTML = """
       <input data-volume type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume">
     </label>
     <span data-queue>QUEUE EMPTY</span>
-    <span>SPACE PLAY · N NEXT</span>
+    <button type="button" data-crossfade aria-label="Change crossfade duration">XF 0S</button>
   </div>
+  <details class="sf-player-up-next">
+    <summary>UP NEXT · DRAG TO REORDER</summary>
+    <ol data-queue-list></ol>
+  </details>
 </section>
 """
 
@@ -153,7 +158,7 @@ video[data-video] {
 
 .sf-player-controls {
   display: grid;
-  grid-template-columns: .8fr 2fr .8fr .8fr;
+  grid-template-columns: .7fr 1.7fr .7fr .7fr 1fr;
   gap: .55rem;
   margin: .65rem 0;
 }
@@ -201,9 +206,57 @@ video[data-video] {
   max-width: 90px;
 }
 
+.sf-player-footer button,
+.sf-player-up-next button {
+  background: transparent;
+  border: 1.5px solid #111111;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+  padding: .25rem .55rem;
+}
+
+.sf-player-up-next {
+  border-top: 1.5px solid #111111;
+  font-size: .72rem;
+  font-weight: 800;
+  margin-top: .7rem;
+  padding-top: .65rem;
+}
+
+.sf-player-up-next summary {
+  cursor: pointer;
+  letter-spacing: .08em;
+}
+
+.sf-player-up-next ol {
+  display: grid;
+  gap: .4rem;
+  list-style: none;
+  margin: .6rem 0 0;
+  padding: 0;
+}
+
+.sf-player-up-next li {
+  align-items: center;
+  background: rgba(255, 255, 255, .55);
+  border: 1.5px solid #111111;
+  border-radius: 10px;
+  cursor: grab;
+  display: grid;
+  gap: .5rem;
+  grid-template-columns: auto 1fr auto;
+  padding: .45rem .55rem;
+}
+
+.sf-player-up-next li.is-dragging {
+  opacity: .45;
+}
+
 @media (max-width: 620px) {
   .sf-player-controls {
-    grid-template-columns: .7fr 1.5fr .7fr .7fr;
+    grid-template-columns: .6fr 1.3fr .6fr .6fr 1fr;
   }
 
   .sf-player-footer > :last-child {
@@ -237,11 +290,20 @@ export default function(component) {
   const previous = root.querySelector("[data-previous]");
   const next = root.querySelector("[data-next]");
   const favorite = root.querySelector("[data-favorite]");
+  const repeat = root.querySelector("[data-repeat]");
+  const crossfade = root.querySelector("[data-crossfade]");
   const volume = root.querySelector("[data-volume]");
   const queue = root.querySelector("[data-queue]");
+  const queueList = root.querySelector("[data-queue-list]");
 
-  const state = root.__streamfetchState ?? { track: null, nextTrack: null };
+  const state = root.__streamfetchState ?? {
+    track: null,
+    nextTrack: null,
+    fadeTimer: null,
+    restoring: false,
+  };
   state.nextTrack = data.next ?? null;
+  state.queueItems = data.queue ?? [];
   root.__streamfetchState = state;
 
   const activeMedia = () => state.track?.media_type === "video" ? video : audio;
@@ -253,9 +315,49 @@ export default function(component) {
     favorite.setAttribute("aria-label", data.favorite ? "Remove favorite" : "Add favorite");
     previous.disabled = !data.can_previous;
     next.disabled = !state.nextTrack;
+    repeat.textContent = `REPEAT ${data.repeat_mode.toUpperCase()}`;
+    crossfade.textContent = `XF ${data.crossfade_seconds}S`;
     queue.textContent = data.queue_count
       ? `QUEUE · ${data.queue_count}`
       : "QUEUE EMPTY";
+  };
+
+  const renderQueue = () => {
+    queueList.replaceChildren();
+    state.queueItems.forEach((item, index) => {
+      const row = document.createElement("li");
+      row.draggable = true;
+      row.dataset.entryId = String(item.entry_id);
+      const handle = document.createElement("span");
+      handle.textContent = "↕";
+      const label = document.createElement("span");
+      label.textContent = `${item.title} — ${item.artist}`;
+      const playNow = document.createElement("button");
+      playNow.type = "button";
+      playNow.textContent = "PLAY";
+      playNow.onclick = () => emit("jump", { entry_id: item.entry_id });
+      row.append(handle, label, playNow);
+      row.ondragstart = () => {
+        state.draggedId = item.entry_id;
+        row.classList.add("is-dragging");
+      };
+      row.ondragend = () => row.classList.remove("is-dragging");
+      row.ondragover = (event) => event.preventDefault();
+      row.ondrop = (event) => {
+        event.preventDefault();
+        const from = state.queueItems.findIndex((entry) => entry.entry_id === state.draggedId);
+        const to = state.queueItems.findIndex((entry) => entry.entry_id === item.entry_id);
+        if (from < 0 || to < 0 || from === to) return;
+        const reordered = [...state.queueItems];
+        const [moved] = reordered.splice(from, 1);
+        reordered.splice(to, 0, moved);
+        state.queueItems = reordered;
+        state.nextTrack = reordered[0] ?? null;
+        renderQueue();
+        emit("reorder", { entry_ids: reordered.map((entry) => entry.entry_id) });
+      };
+      queueList.appendChild(row);
+    });
   };
 
   const syncProgress = () => {
@@ -292,8 +394,12 @@ export default function(component) {
       media.dataset.path = track.path;
       media.src = track.url;
       media.load();
+      state.restoring = true;
     }
-    media.volume = Number(volume.value);
+    const fadeIn = shouldPlay && track.media_type === "audio"
+      ? Number(data.crossfade_seconds)
+      : 0;
+    media.volume = fadeIn > 0 ? 0 : Number(volume.value);
     syncMeta(track);
     syncProgress();
     syncPlayback();
@@ -302,6 +408,18 @@ export default function(component) {
       media.play().catch(() => {
         status.textContent = "PRESS PLAY";
       });
+      if (fadeIn > 0) {
+        if (state.fadeTimer) clearInterval(state.fadeTimer);
+        const started = performance.now();
+        state.fadeTimer = setInterval(() => {
+          const progress = Math.min(1, (performance.now() - started) / (fadeIn * 1000));
+          media.volume = Number(volume.value) * progress;
+          if (progress >= 1) {
+            clearInterval(state.fadeTimer);
+            state.fadeTimer = null;
+          }
+        }, 50);
+      }
     }
   };
 
@@ -321,8 +439,20 @@ export default function(component) {
   };
 
   const onEnded = () => {
-    if (state.nextTrack) {
+    if (data.repeat_mode === "one") {
+      const media = activeMedia();
+      media.currentTime = 0;
+      media.volume = Number(volume.value);
+      media.play();
+      emit("replay");
+    } else if (state.nextTrack) {
       advance();
+    } else if (data.repeat_mode === "all") {
+      const media = activeMedia();
+      media.currentTime = 0;
+      media.volume = Number(volume.value);
+      media.play();
+      emit("replay");
     } else {
       status.textContent = "QUEUE ENDED";
       play.textContent = "PLAY";
@@ -330,8 +460,32 @@ export default function(component) {
   };
   const onPlay = () => syncPlayback();
   const onPause = () => syncPlayback();
-  const onTime = () => syncProgress();
-  const onLoaded = () => syncProgress();
+  const onTime = () => {
+    syncProgress();
+    const media = activeMedia();
+    const fade = Number(data.crossfade_seconds);
+    if (
+      fade > 0
+      && state.nextTrack?.media_type === "audio"
+      && state.track?.media_type === "audio"
+      && Number.isFinite(media.duration)
+    ) {
+      const remaining = media.duration - media.currentTime;
+      media.volume = remaining < fade
+        ? Math.max(0, Number(volume.value) * (remaining / fade))
+        : Number(volume.value);
+    }
+  };
+  const onLoaded = () => {
+    if (state.restoring && data.resume_position > 0) {
+      const media = activeMedia();
+      if (!Number.isFinite(media.duration) || data.resume_position < media.duration - 3) {
+        media.currentTime = data.resume_position;
+      }
+      state.restoring = false;
+    }
+    syncProgress();
+  };
 
   for (const media of [audio, video]) {
     media.addEventListener("ended", onEnded);
@@ -347,17 +501,31 @@ export default function(component) {
       media.play().catch(() => { status.textContent = "PLAY BLOCKED"; });
     } else {
       media.pause();
+      emit("position", { position: media.currentTime });
     }
   };
   previous.onclick = () => emit("previous");
   next.onclick = () => advance();
   favorite.onclick = () => emit("favorite");
+  repeat.onclick = () => {
+    const modes = ["off", "all", "one"];
+    const mode = modes[(modes.indexOf(data.repeat_mode) + 1) % modes.length];
+    repeat.textContent = `REPEAT ${mode.toUpperCase()}`;
+    emit("repeat", { mode });
+  };
+  crossfade.onclick = () => {
+    const values = [0, 2, 4, 6];
+    const seconds = values[(values.indexOf(data.crossfade_seconds) + 1) % values.length];
+    crossfade.textContent = `XF ${seconds}S`;
+    emit("crossfade", { seconds });
+  };
   seek.oninput = () => {
     const media = activeMedia();
     if (Number.isFinite(media.duration)) {
       media.currentTime = (Number(seek.value) / 1000) * media.duration;
     }
   };
+  seek.onchange = () => emit("position", { position: activeMedia().currentTime });
   volume.oninput = () => {
     audio.volume = Number(volume.value);
     video.volume = Number(volume.value);
@@ -388,6 +556,8 @@ export default function(component) {
     syncProgress();
     syncPlayback();
   }
+
+  renderQueue();
 
   if (state.nextTrack?.media_type === "audio") {
     const preloader = new Audio();
@@ -436,12 +606,14 @@ def media_url(item: MediaItem, coordinate: str, media_manager: Any | None = None
 
 def build_player_data(
     current: MediaItem,
-    next_entry: QueueEntry | None,
+    queue_entries: tuple[QueueEntry, ...],
     *,
     favorite: bool,
     can_previous: bool,
     autoplay: bool,
-    queue_count: int,
+    repeat_mode: str,
+    crossfade_seconds: int,
+    resume_position: float,
     media_manager: Any | None = None,
 ) -> dict[str, Any]:
     """Create the trusted payload passed to the continuous player component."""
@@ -451,19 +623,32 @@ def build_player_data(
         media_url(current, "streamfetch-player-current", media_manager),
     )
     next_data = None
-    if next_entry is not None:
+    if queue_entries:
+        next_entry = queue_entries[0]
         next_data = _track_data(
             next_entry.item,
             media_url(next_entry.item, "streamfetch-player-next", media_manager),
         )
         next_data["entry_id"] = next_entry.id
+    queue_data = [
+        {
+            "entry_id": entry.id,
+            "title": entry.item.title,
+            "artist": entry.item.artist,
+        }
+        for entry in queue_entries
+    ]
     return {
         "current": current_data,
         "next": next_data,
+        "queue": queue_data,
         "favorite": favorite,
         "can_previous": can_previous,
         "autoplay": autoplay,
-        "queue_count": queue_count,
+        "queue_count": len(queue_entries),
+        "repeat_mode": repeat_mode,
+        "crossfade_seconds": crossfade_seconds,
+        "resume_position": resume_position,
     }
 
 
