@@ -27,6 +27,11 @@ class DownloadRequest:
     embed_subtitles: bool = False
     subtitle_languages: tuple[str, ...] = ("en",)
     cookie_browser: str | None = None
+    concurrent_fragments: int = 4
+    rate_limit: int | None = None
+    download_sections: tuple[str, ...] = ()
+    split_chapters: bool = False
+    sponsorblock_remove: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -35,6 +40,8 @@ class ProgressEvent:
     message: str
     progress: float | None = None
     filename: str | None = None
+    speed_bytes_per_second: float | None = None
+    eta_seconds: float | None = None
 
 
 @dataclass(frozen=True)

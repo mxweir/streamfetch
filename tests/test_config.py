@@ -109,6 +109,29 @@ def test_disable_playlist_and_unlimited_items():
     assert "playlistend" not in options
 
 
+def test_advanced_download_options_are_forwarded():
+    request = make_request(
+        concurrent_fragments=8,
+        rate_limit=2 * 1024 * 1024,
+        download_sections=("10-40",),
+        split_chapters=True,
+        sponsorblock_remove=("sponsor", "intro"),
+    )
+
+    options = build_ydl_options(request)
+
+    assert options["concurrent_fragment_downloads"] == 8
+    assert options["ratelimit"] == 2 * 1024 * 1024
+    assert list(options["download_ranges"]({}, None)) == [
+        {"start_time": 10.0, "end_time": 40.0}
+    ]
+    assert options["sponsorblock_remove"] == {"sponsor", "intro"}
+    assert {processor["key"] for processor in options["postprocessors"]} >= {
+        "FFmpegSplitChapters",
+        "FFmpegMetadata",
+    }
+
+
 def test_subtitle_language_parsing_and_size_formatting():
     assert parse_subtitle_languages("en, de, ") == ("en", "de")
     assert parse_subtitle_languages("") == ("en",)
