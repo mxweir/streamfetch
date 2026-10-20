@@ -55,6 +55,26 @@ class LibraryStats:
     size_bytes: int
 
 
+@dataclass(frozen=True)
+class Playlist:
+    id: int
+    name: str
+    item_count: int
+
+
+@dataclass(frozen=True)
+class QueueEntry:
+    id: int
+    item: MediaItem
+
+
+@dataclass(frozen=True)
+class HistoryEntry:
+    id: int
+    item: MediaItem
+    played_at: float
+
+
 class MediaLibrary:
     """Index a media folder in a small SQLite database stored inside it."""
 
@@ -211,10 +231,269 @@ class MediaLibrary:
             size_bytes=row["size_bytes"],
         )
 
+    def relative_path(self, path: Path | str) -> str:
+        candidate = Path(path)
+        if candidate.is_absolute():
+            candidate = candidate.expanduser().resolve().relative_to(self.root)
+        if ".." in candidate.parts:
+            raise ValueError("Media paths must stay inside the library folder.")
+        return candidate.as_posix()
+
+    def item_for_path(self, path: Path | str) -> MediaItem | None:
+        relative_path = self.relative_path(path)
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM media_items WHERE path = ?",
+                (relative_path,),
+            ).fetchone()
+        return self._item_from_row(row) if row else None
+
+    def set_current_item(self, path: Path | str) -> None:
+        relative_path = self.relative_path(path)
+        with self._connection() as connection:
+            if not connection.execute(
+                "SELECT 1 FROM media_items WHERE path = ?",
+                (relative_path,),
+            ).fetchone():
+                raise ValueError("The selected item is not indexed in this library.")
+            connection.execute(
+                """
+                INSERT INTO settings(key, value) VALUES ('current_item', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (relative_path,),
+            )
+
+    def current_item(self) -> MediaItem | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                """
+                SELECT media_items.*
+                FROM settings
+                JOIN media_items ON media_items.path = settings.value
+                WHERE settings.key = 'current_item'
+                """
+            ).fetchone()
+        return self._item_from_row(row) if row else None
+
+    def record_play(self, path: Path | str) -> None:
+        relative_path = self.relative_path(path)
+        with self._connection() as connection:
+            connection.execute(
+                "INSERT INTO play_history(path, played_at) VALUES (?, ?)",
+                (relative_path, time.time()),
+            )
+            connection.execute(
+                """
+                DELETE FROM play_history
+                WHERE id NOT IN (
+                    SELECT id FROM play_history ORDER BY id DESC LIMIT 5000
+                )
+                """
+            )
+
+    def history(self, limit: int = 100) -> tuple[HistoryEntry, ...]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT media_items.*, play_history.id AS history_id,
+                       play_history.played_at AS history_played_at
+                FROM play_history
+                JOIN media_items ON media_items.path = play_history.path
+                ORDER BY play_history.id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return tuple(
+            HistoryEntry(row["history_id"], self._item_from_row(row), row["history_played_at"])
+            for row in rows
+        )
+
+    def previous_item(self, current_path: Path | str) -> MediaItem | None:
+        relative_path = self.relative_path(current_path)
+        with self._connection() as connection:
+            row = connection.execute(
+                """
+                SELECT media_items.*
+                FROM play_history
+                JOIN media_items ON media_items.path = play_history.path
+                WHERE play_history.path != ?
+                ORDER BY play_history.id DESC
+                LIMIT 1
+                """,
+                (relative_path,),
+            ).fetchone()
+        return self._item_from_row(row) if row else None
+
+    def toggle_favorite(self, path: Path | str) -> bool:
+        relative_path = self.relative_path(path)
+        with self._connection() as connection:
+            exists = connection.execute(
+                "SELECT 1 FROM favorites WHERE path = ?",
+                (relative_path,),
+            ).fetchone()
+            if exists:
+                connection.execute("DELETE FROM favorites WHERE path = ?", (relative_path,))
+                return False
+            connection.execute(
+                "INSERT INTO favorites(path, created_at) VALUES (?, ?)",
+                (relative_path, time.time()),
+            )
+        return True
+
+    def favorite_paths(self) -> set[str]:
+        with self._connection() as connection:
+            return {row[0] for row in connection.execute("SELECT path FROM favorites")}
+
+    def favorite_items(self) -> tuple[MediaItem, ...]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT media_items.*
+                FROM favorites
+                JOIN media_items ON media_items.path = favorites.path
+                ORDER BY favorites.created_at DESC
+                """
+            ).fetchall()
+        return tuple(self._item_from_row(row) for row in rows)
+
+    def enqueue(self, path: Path | str) -> int:
+        relative_path = self.relative_path(path)
+        with self._connection() as connection:
+            cursor = connection.execute(
+                "INSERT INTO queue(path, created_at) VALUES (?, ?)",
+                (relative_path, time.time()),
+            )
+            return cursor.lastrowid
+
+    def queue(self) -> tuple[QueueEntry, ...]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT media_items.*, queue.id AS queue_id
+                FROM queue
+                JOIN media_items ON media_items.path = queue.path
+                ORDER BY queue.id
+                """
+            ).fetchall()
+        return tuple(QueueEntry(row["queue_id"], self._item_from_row(row)) for row in rows)
+
+    def take_queue_entry(self, entry_id: int | None = None) -> MediaItem | None:
+        with self._connection() as connection:
+            if entry_id is None:
+                row = connection.execute(
+                    """
+                    SELECT media_items.*, queue.id AS queue_id
+                    FROM queue
+                    JOIN media_items ON media_items.path = queue.path
+                    ORDER BY queue.id
+                    LIMIT 1
+                    """
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    """
+                    SELECT media_items.*, queue.id AS queue_id
+                    FROM queue
+                    JOIN media_items ON media_items.path = queue.path
+                    WHERE queue.id = ?
+                    """,
+                    (entry_id,),
+                ).fetchone()
+            if row:
+                connection.execute("DELETE FROM queue WHERE id = ?", (row["queue_id"],))
+        return self._item_from_row(row) if row else None
+
+    def remove_queue_entry(self, entry_id: int) -> None:
+        with self._connection() as connection:
+            connection.execute("DELETE FROM queue WHERE id = ?", (entry_id,))
+
+    def clear_queue(self) -> None:
+        with self._connection() as connection:
+            connection.execute("DELETE FROM queue")
+
+    def create_playlist(self, name: str) -> Playlist:
+        clean_name = " ".join(name.split())
+        if not clean_name:
+            raise ValueError("Enter a playlist name.")
+        if len(clean_name) > 80:
+            raise ValueError("Playlist names must be 80 characters or fewer.")
+        try:
+            with self._connection() as connection:
+                cursor = connection.execute(
+                    "INSERT INTO playlists(name, created_at) VALUES (?, ?)",
+                    (clean_name, time.time()),
+                )
+                playlist_id = cursor.lastrowid
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("A playlist with this name already exists.") from exc
+        return Playlist(playlist_id, clean_name, 0)
+
+    def playlists(self) -> tuple[Playlist, ...]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT playlists.id, playlists.name, COUNT(playlist_items.path) AS item_count
+                FROM playlists
+                LEFT JOIN playlist_items ON playlist_items.playlist_id = playlists.id
+                GROUP BY playlists.id
+                ORDER BY playlists.name COLLATE NOCASE
+                """
+            ).fetchall()
+        return tuple(Playlist(row["id"], row["name"], row["item_count"]) for row in rows)
+
+    def delete_playlist(self, playlist_id: int) -> None:
+        with self._connection() as connection:
+            connection.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
+
+    def add_to_playlist(self, playlist_id: int, path: Path | str) -> None:
+        relative_path = self.relative_path(path)
+        with self._connection() as connection:
+            position = connection.execute(
+                """
+                SELECT COALESCE(MAX(position), 0) + 1
+                FROM playlist_items
+                WHERE playlist_id = ?
+                """,
+                (playlist_id,),
+            ).fetchone()[0]
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO playlist_items(
+                    playlist_id, path, position, created_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (playlist_id, relative_path, position, time.time()),
+            )
+
+    def remove_from_playlist(self, playlist_id: int, path: Path | str) -> None:
+        relative_path = self.relative_path(path)
+        with self._connection() as connection:
+            connection.execute(
+                "DELETE FROM playlist_items WHERE playlist_id = ? AND path = ?",
+                (playlist_id, relative_path),
+            )
+
+    def playlist_items(self, playlist_id: int) -> tuple[MediaItem, ...]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT media_items.*
+                FROM playlist_items
+                JOIN media_items ON media_items.path = playlist_items.path
+                WHERE playlist_items.playlist_id = ?
+                ORDER BY playlist_items.position, playlist_items.created_at
+                """,
+                (playlist_id,),
+            ).fetchall()
+        return tuple(self._item_from_row(row) for row in rows)
+
     def _connect(self) -> sqlite3.Connection:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.database_path)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS media_items (
@@ -235,6 +514,43 @@ class MediaLibrary:
         )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS media_search ON media_items(title, artist, album)"
+        )
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS favorites (
+                path TEXT PRIMARY KEY REFERENCES media_items(path) ON DELETE CASCADE,
+                created_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                path TEXT NOT NULL REFERENCES media_items(path) ON DELETE CASCADE,
+                created_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS playlists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                created_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS playlist_items (
+                playlist_id INTEGER NOT NULL
+                    REFERENCES playlists(id) ON DELETE CASCADE,
+                path TEXT NOT NULL REFERENCES media_items(path) ON DELETE CASCADE,
+                position INTEGER NOT NULL,
+                created_at REAL NOT NULL,
+                PRIMARY KEY (playlist_id, path)
+            );
+            CREATE TABLE IF NOT EXISTS play_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                path TEXT NOT NULL REFERENCES media_items(path) ON DELETE CASCADE,
+                played_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS queue_order ON queue(id);
+            CREATE INDEX IF NOT EXISTS history_order ON play_history(id DESC);
+            """
         )
         return connection
 

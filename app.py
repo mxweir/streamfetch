@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import html
 import shutil
 import sqlite3
@@ -18,7 +19,7 @@ from streamfetch.config import (
     validate_request,
 )
 from streamfetch.downloader import Downloader, DownloaderError
-from streamfetch.library import MediaItem, MediaLibrary
+from streamfetch.library import MediaItem, MediaLibrary, Playlist
 from streamfetch.models import DownloadRequest, MediaType, ProgressEvent
 from streamfetch.theme import (
     APP_CSS,
@@ -33,6 +34,15 @@ from streamfetch.theme import (
 )
 
 st.set_page_config(page_title="StreamFetch", page_icon="⚡", layout="wide")
+
+AUDIO_MIME_TYPES = {
+    "FLAC": "audio/flac",
+    "M4A": "audio/mp4",
+    "MP3": "audio/mpeg",
+    "OGG": "audio/ogg",
+    "OPUS": "audio/ogg",
+    "WAV": "audio/wav",
+}
 
 
 def render_header() -> None:
@@ -277,17 +287,11 @@ def render_library_view() -> None:
                 )
 
         stats = library.stats()
-        search = st.session_state.library_search
-        media_type = st.session_state.library_media_type
-        total_matches = library.count_items(search, media_type)
-        items = library.list_items(
-            search=search,
-            media_type=media_type,
-            sort=st.session_state.library_sort,
-        )
     except (OSError, sqlite3.Error) as exc:
         st.error(f"The library could not be opened: {exc}")
         return
+
+    render_player(library)
 
     metric_columns = st.columns(5)
     metric_columns[0].metric("Items", stats.total)
@@ -296,32 +300,72 @@ def render_library_view() -> None:
     metric_columns[3].metric("Artists", stats.artists)
     metric_columns[4].metric("Storage", human_size(stats.size_bytes))
 
-    if not items:
-        st.info(
-            "No matching media found. Download something first or choose another library folder."
-        )
+    section = st.radio(
+        "Library section",
+        ["Browse", "Favorites", "Playlists", "History"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="library_section",
+    )
+    if section == "History":
+        render_history(library)
+        return
+    if section == "Playlists":
+        render_playlists(library)
         return
 
+    search = st.session_state.library_search
+    media_type = st.session_state.library_media_type
+    sort = st.session_state.library_sort
+    if section == "Favorites":
+        items = filter_collection(library.favorite_items(), search, media_type, sort)
+        total_matches = len(items)
+    else:
+        total_matches = library.count_items(search, media_type)
+        items = library.list_items(search=search, media_type=media_type, sort=sort)
+
+    render_media_grid(library, items, total_matches)
+
+
+def render_media_grid(
+    library: MediaLibrary,
+    items: tuple[MediaItem, ...],
+    total_matches: int,
+    active_playlist_id: int | None = None,
+) -> None:
+    if not items:
+        st.info("No matching media found in this collection.")
+        return
+
+    playlists = library.playlists()
+    favorite_paths = library.favorite_paths()
     shown = len(items)
     st.caption(f"Showing {shown} of {total_matches} matching item(s).")
     for start in range(0, shown, 3):
         columns = st.columns(3)
         for column, item in zip(columns, items[start : start + 3], strict=False):
             with column:
-                render_library_item(item)
+                render_library_item(
+                    library,
+                    item,
+                    favorite_paths,
+                    playlists,
+                    active_playlist_id,
+                )
 
 
-def render_library_item(item: MediaItem) -> None:
+def render_library_item(
+    library: MediaLibrary,
+    item: MediaItem,
+    favorite_paths: set[str],
+    playlists: tuple[Playlist, ...],
+    active_playlist_id: int | None = None,
+) -> None:
+    relative_path = library.relative_path(item.path)
+    item_key = hashlib.sha256(relative_path.encode()).hexdigest()[:12]
     with st.container(border=True):
         st.markdown('<span class="sf-library-card-marker"></span>', unsafe_allow_html=True)
-        if item.cover_path and item.cover_path.exists():
-            st.image(str(item.cover_path), width="stretch")
-        else:
-            icon = "♫" if item.media_type == "audio" else "▶"
-            st.markdown(
-                f'<div class="sf-cover-placeholder"><span>{icon}</span></div>',
-                unsafe_allow_html=True,
-            )
+        render_media_art(item)
 
         title = html.escape(item.title)
         artist = html.escape(item.artist)
@@ -336,10 +380,239 @@ def render_library_item(item: MediaItem) -> None:
         if item.duration_seconds:
             details.append(format_duration(int(item.duration_seconds)).removeprefix(" — "))
         st.caption(" · ".join(details))
+
+        play_col, favorite_col = st.columns(2)
+        if play_col.button("▶ Play", key=f"play_{item_key}", width="stretch"):
+            select_media(library, item)
+        favorite_label = "♥ Saved" if relative_path in favorite_paths else "♡ Favorite"
+        if favorite_col.button(
+            favorite_label,
+            key=f"favorite_{item_key}",
+            width="stretch",
+        ):
+            library.toggle_favorite(item.path)
+            st.rerun()
+        if st.button("＋ Add to queue", key=f"queue_{item_key}", width="stretch"):
+            library.enqueue(item.path)
+            st.toast(f"Added {item.title} to the queue.")
+            st.rerun()
+
+        if playlists:
+            with st.expander("Add to playlist"):
+                playlist_names = {playlist.id: playlist.name for playlist in playlists}
+                playlist_id = st.selectbox(
+                    "Playlist",
+                    list(playlist_names),
+                    format_func=playlist_names.get,
+                    key=f"playlist_select_{item_key}",
+                )
+                if st.button("Add", key=f"playlist_add_{item_key}", width="stretch"):
+                    library.add_to_playlist(playlist_id, item.path)
+                    st.toast(f"Added {item.title} to {playlist_names[playlist_id]}.")
+                    st.rerun()
+        if active_playlist_id is not None and st.button(
+            "Remove from playlist",
+            key=f"playlist_remove_{active_playlist_id}_{item_key}",
+            width="stretch",
+        ):
+            library.remove_from_playlist(active_playlist_id, item.path)
+            st.rerun()
+
         modified = datetime.fromtimestamp(item.modified_at).strftime("%Y-%m-%d %H:%M")
         with st.expander("File details"):
             st.caption(f"Modified {modified}")
             st.code(str(item.path), language=None)
+
+
+def render_media_art(item: MediaItem) -> None:
+    if item.cover_path and item.cover_path.exists():
+        st.image(str(item.cover_path), width="stretch")
+        return
+    icon = "♫" if item.media_type == "audio" else "▶"
+    st.markdown(
+        f'<div class="sf-cover-placeholder"><span>{icon}</span></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def select_media(library: MediaLibrary, item: MediaItem) -> None:
+    library.set_current_item(item.path)
+    library.record_play(item.path)
+    st.session_state.player_autoplay = True
+    st.rerun()
+
+
+def render_player(library: MediaLibrary) -> None:
+    current = library.current_item()
+    queue = library.queue()
+    if current is None:
+        st.info("Choose an item from the library to start the local player.")
+        if queue and st.button("Play first queued item", type="primary"):
+            item = library.take_queue_entry()
+            if item:
+                select_media(library, item)
+        return
+
+    with st.container(border=True):
+        st.markdown('<span class="sf-player-marker"></span>', unsafe_allow_html=True)
+        art_col, player_col = st.columns([1, 3])
+        with art_col:
+            render_media_art(current)
+        with player_col:
+            st.markdown('<div class="sf-player-kicker">Now playing</div>', unsafe_allow_html=True)
+            st.subheader(current.title)
+            st.caption(f"{current.artist} · {current.album}")
+            autoplay = st.session_state.pop("player_autoplay", False)
+            if current.media_type == "audio":
+                st.audio(
+                    str(current.path),
+                    format=AUDIO_MIME_TYPES.get(current.format, "audio/mpeg"),
+                    autoplay=autoplay,
+                    alt=f"{current.title} by {current.artist}",
+                    width="stretch",
+                )
+            else:
+                st.video(str(current.path), autoplay=autoplay)
+
+            previous = library.previous_item(current.path)
+            controls = st.columns(3)
+            if controls[0].button(
+                "← Previous",
+                disabled=previous is None,
+                width="stretch",
+                key="player_previous",
+            ) and previous:
+                select_media(library, previous)
+            if controls[1].button(
+                "Next →",
+                disabled=not queue,
+                width="stretch",
+                key="player_next",
+            ):
+                next_item = library.take_queue_entry()
+                if next_item:
+                    select_media(library, next_item)
+            current_is_favorite = library.relative_path(current.path) in library.favorite_paths()
+            favorite_label = "♥ Saved" if current_is_favorite else "♡ Favorite"
+            if controls[2].button(favorite_label, width="stretch", key="player_favorite"):
+                library.toggle_favorite(current.path)
+                st.rerun()
+
+        with st.expander(f"Queue · {len(queue)} item(s)"):
+            if not queue:
+                st.caption("Your queue is empty.")
+            for entry in queue:
+                title_col, play_col, remove_col = st.columns([3, 1, 1])
+                title_col.write(f"{entry.item.title} — {entry.item.artist}")
+                if play_col.button("Play", key=f"queue_play_{entry.id}"):
+                    item = library.take_queue_entry(entry.id)
+                    if item:
+                        select_media(library, item)
+                if remove_col.button("Remove", key=f"queue_remove_{entry.id}"):
+                    library.remove_queue_entry(entry.id)
+                    st.rerun()
+            if queue and st.button("Clear queue", key="queue_clear"):
+                library.clear_queue()
+                st.rerun()
+
+
+def render_playlists(library: MediaLibrary) -> None:
+    create_col, button_col = st.columns([3, 1])
+    playlist_name = create_col.text_input(
+        "New playlist",
+        placeholder="Road trip, Focus, Favorites…",
+        key="new_playlist_name",
+    )
+    if button_col.button("Create", type="primary", width="stretch"):
+        try:
+            playlist = library.create_playlist(playlist_name)
+        except ValueError as exc:
+            st.error(str(exc))
+        else:
+            st.session_state.selected_playlist_id = playlist.id
+            st.rerun()
+
+    playlists = library.playlists()
+    if not playlists:
+        st.info("Create your first playlist, then add tracks from Browse or Favorites.")
+        return
+
+    playlist_names = {
+        playlist.id: f"{playlist.name} · {playlist.item_count} item(s)" for playlist in playlists
+    }
+    valid_ids = set(playlist_names)
+    selected_id = st.session_state.get("selected_playlist_id")
+    if selected_id not in valid_ids:
+        selected_id = playlists[0].id
+    selected_id = st.selectbox(
+        "Playlist",
+        list(playlist_names),
+        index=list(playlist_names).index(selected_id),
+        format_func=playlist_names.get,
+        key="playlist_browser",
+    )
+    st.session_state.selected_playlist_id = selected_id
+
+    delete_col, _ = st.columns([1, 3])
+    if delete_col.button("Delete playlist", width="stretch"):
+        library.delete_playlist(selected_id)
+        st.session_state.pop("selected_playlist_id", None)
+        st.rerun()
+
+    items = filter_collection(
+        library.playlist_items(selected_id),
+        st.session_state.library_search,
+        st.session_state.library_media_type,
+        st.session_state.library_sort,
+    )
+    render_media_grid(library, items, len(items), active_playlist_id=selected_id)
+
+
+def render_history(library: MediaLibrary) -> None:
+    entries = library.history()
+    if not entries:
+        st.info("Play something and it will appear here.")
+        return
+    st.caption(f"Your latest {len(entries)} play action(s).")
+    for entry in entries:
+        with st.container(border=True):
+            st.markdown('<span class="sf-history-marker"></span>', unsafe_allow_html=True)
+            text_col, time_col, play_col = st.columns([3, 2, 1])
+            text_col.markdown(f"**{entry.item.title}**  \n{entry.item.artist}")
+            played = datetime.fromtimestamp(entry.played_at).strftime("%Y-%m-%d %H:%M")
+            time_col.caption(f"Played {played}")
+            if play_col.button("Play", key=f"history_play_{entry.id}", width="stretch"):
+                select_media(library, entry.item)
+
+
+def filter_collection(
+    items: tuple[MediaItem, ...],
+    search: str,
+    media_type: str,
+    sort: str,
+) -> tuple[MediaItem, ...]:
+    query = search.strip().casefold()
+    filtered = [
+        item
+        for item in items
+        if (media_type == "all" or item.media_type == media_type)
+        and (
+            not query
+            or query
+            in " ".join((item.title, item.artist, item.album, str(item.path))).casefold()
+        )
+    ]
+    if sort == "artist":
+        filtered.sort(key=lambda item: (item.artist.casefold(), item.title.casefold()))
+    elif sort == "largest":
+        filtered.sort(key=lambda item: item.size_bytes, reverse=True)
+    elif sort == "oldest":
+        filtered.sort(key=lambda item: item.modified_at)
+    elif sort == "title":
+        filtered.sort(key=lambda item: item.title.casefold())
+    else:
+        filtered.sort(key=lambda item: item.modified_at, reverse=True)
+    return tuple(filtered[:120])
 
 
 def main() -> None:
