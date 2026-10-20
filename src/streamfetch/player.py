@@ -24,244 +24,248 @@ VIDEO_MIME_TYPES = {
 
 PLAYER_HTML = """
 <section class="sf-continuous-player" tabindex="0" aria-label="StreamFetch media player">
-  <div class="sf-player-topline">
-    <span>CONTINUOUS PLAYER</span>
-    <span class="sf-player-status" data-status>READY</span>
-  </div>
-  <div class="sf-player-video" data-video-slot></div>
   <audio data-audio preload="auto"></audio>
   <video data-video preload="metadata" playsinline></video>
-  <div class="sf-player-meta">
-    <strong data-title>Nothing playing</strong>
-    <span data-byline>Choose something from your library</span>
-  </div>
-  <div class="sf-player-timeline">
-    <input data-seek type="range" min="0" max="1000" value="0" aria-label="Playback position">
-    <div class="sf-player-times">
-      <span data-current-time>0:00</span><span data-duration>0:00</span>
+  <div class="sf-player-bar">
+    <div class="sf-player-art" data-media-icon>♫</div>
+    <div class="sf-player-track">
+      <div class="sf-player-meta">
+        <strong data-title>Nothing playing</strong>
+        <span data-byline>Choose something from your library</span>
+      </div>
+      <div class="sf-player-timeline">
+        <input data-seek type="range" min="0" max="1000" value="0" aria-label="Playback position">
+        <div class="sf-player-times">
+          <span data-current-time>0:00</span><span data-duration>0:00</span>
+        </div>
+      </div>
+    </div>
+    <div class="sf-player-controls">
+      <button type="button" data-previous aria-label="Previous item">&#10094;</button>
+      <button type="button" class="sf-player-play" data-play aria-label="Play">PLAY</button>
+      <button type="button" data-next aria-label="Next queued item">&#10095;</button>
+      <button type="button" data-favorite aria-label="Toggle favorite">&#9825;</button>
+      <button type="button" data-expand aria-label="Expand player"
+              aria-expanded="false">&#8963;</button>
     </div>
   </div>
-  <div class="sf-player-controls">
-    <button type="button" data-previous aria-label="Previous item">&#8592;</button>
-    <button type="button" class="sf-player-play" data-play aria-label="Play">PLAY</button>
-    <button type="button" data-next aria-label="Next queued item">&#8594;</button>
-    <button type="button" data-favorite aria-label="Toggle favorite">&#9825;</button>
-    <button type="button" data-repeat aria-label="Change repeat mode">REPEAT OFF</button>
+  <div class="sf-player-expanded">
+    <div class="sf-player-video" data-video-slot></div>
+    <div class="sf-player-topline">
+      <span class="sf-player-status" data-status>READY</span>
+      <span data-queue>QUEUE EMPTY</span>
+    </div>
+    <div class="sf-player-footer">
+      <label>VOL <input data-volume type="range" min="0" max="1" step="0.05"
+                        value="1" aria-label="Volume"></label>
+      <button type="button" data-repeat aria-label="Change repeat mode">REPEAT OFF</button>
+      <button type="button" data-crossfade aria-label="Change crossfade duration">XF 0S</button>
+    </div>
+    <div class="sf-player-queue-head">
+      <strong>UP NEXT · DRAG TO REORDER</strong>
+      <div>
+        <button type="button" data-shuffle>SHUFFLE</button>
+        <button type="button" data-clear>CLEAR</button>
+      </div>
+    </div>
+    <ol class="sf-player-queue" data-queue-list></ol>
   </div>
-  <div class="sf-player-footer">
-    <label>
-      VOL
-      <input data-volume type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume">
-    </label>
-    <span data-queue>QUEUE EMPTY</span>
-    <button type="button" data-crossfade aria-label="Change crossfade duration">XF 0S</button>
-  </div>
-  <details class="sf-player-up-next">
-    <summary>UP NEXT · DRAG TO REORDER</summary>
-    <ol data-queue-list></ol>
-  </details>
 </section>
 """
 
 PLAYER_CSS = """
 :host {
   display: block;
-  color: #111111;
-  font-family: "Space Grotesk", "Arial", sans-serif;
+  color: #17151c;
+  font-family: Inter, "Helvetica Neue", Arial, sans-serif;
 }
 
 .sf-continuous-player {
-  background: #f3ddff;
-  border: 2px solid #111111;
-  border-radius: 22px;
-  box-shadow: 5px 5px 0 #111111;
-  padding: 1rem;
+  overflow: hidden;
+  padding: .58rem;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 20px;
+  background: rgba(23, 21, 28, .96);
+  box-shadow: 0 24px 70px rgba(15, 12, 22, .35);
+  color: #ffffff;
+  backdrop-filter: blur(20px);
   outline: none;
 }
 
 .sf-continuous-player:focus-visible {
-  box-shadow: 5px 5px 0 #111111, 0 0 0 4px #ffcf40;
+  box-shadow: 0 24px 70px rgba(15, 12, 22, .35), 0 0 0 3px #ffd95a;
 }
 
-.sf-player-topline,
-.sf-player-footer,
-.sf-player-times {
+.sf-player-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: .75rem;
-  font-size: .68rem;
-  font-weight: 800;
-  letter-spacing: .08em;
+  gap: .7rem;
 }
 
-.sf-player-status {
-  background: #7bdba7;
-  border: 1.5px solid #111111;
-  border-radius: 999px;
-  padding: .2rem .55rem;
-}
-
-.sf-player-meta {
+.sf-player-art {
   display: grid;
-  gap: .2rem;
-  margin: .95rem 0 .7rem;
-}
-
-.sf-player-meta strong {
-  font-size: clamp(1.25rem, 3vw, 2rem);
-  line-height: 1;
-}
-
-.sf-player-meta span {
-  color: #4b3c55;
-  font-size: .85rem;
-}
-
-.sf-player-video {
-  display: none;
-  margin-top: .8rem;
-}
-
-.sf-player-video.is-visible {
-  display: block;
-}
-
-.sf-player-video video {
-  background: #111111;
-  border: 2px solid #111111;
+  flex: 0 0 52px;
+  height: 52px;
+  place-items: center;
   border-radius: 14px;
-  display: block;
-  max-height: 360px;
-  width: 100%;
+  background: linear-gradient(140deg, #75b8ff, #d9b8ff);
+  color: #17151c;
+  font-size: 1.35rem;
+  font-weight: 900;
 }
 
-audio,
-video[data-video] {
-  display: none;
+.sf-player-track { flex: 1 1 auto; min-width: 0; }
+.sf-player-meta {
+  align-items: baseline;
+  display: flex;
+  gap: .55rem;
+  min-width: 0;
+}
+.sf-player-meta strong {
+  overflow: hidden;
+  max-width: 55%;
+  font-size: .9rem;
+  font-weight: 800;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sf-player-meta span {
+  overflow: hidden;
+  color: #aaa3b2;
+  font-size: .72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sf-player-timeline input,
 .sf-player-footer input {
-  accent-color: #7248ff;
+  accent-color: #d9b8ff;
   cursor: pointer;
 }
-
-.sf-player-timeline > input {
-  width: 100%;
-}
-
+.sf-player-timeline { margin-top: .38rem; }
+.sf-player-timeline > input { display: block; width: 100%; height: 4px; }
 .sf-player-times {
-  color: #5b4765;
-  margin-top: -.1rem;
+  display: flex;
+  justify-content: space-between;
+  margin-top: -.15rem;
+  color: #8f8897;
+  font-size: .58rem;
+  font-weight: 700;
 }
 
 .sf-player-controls {
-  display: grid;
-  grid-template-columns: .7fr 1.7fr .7fr .7fr 1fr;
-  gap: .55rem;
-  margin: .65rem 0;
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: .28rem;
 }
-
-.sf-player-controls button {
-  background: #ffffff;
-  border: 2px solid #111111;
-  border-radius: 999px;
-  color: #111111;
+.sf-player-controls button,
+.sf-player-footer button,
+.sf-player-queue-head button,
+.sf-player-queue button {
+  border: 0;
+  border-radius: 10px;
+  background: rgba(255,255,255,.09);
+  color: #ffffff;
   cursor: pointer;
   font: inherit;
-  font-size: .8rem;
-  font-weight: 900;
-  min-height: 42px;
+  font-size: .67rem;
+  font-weight: 850;
+  min-height: 34px;
+  padding: 0 .58rem;
 }
-
-.sf-player-controls button:hover:not(:disabled) {
-  background: #ffcf40;
-  transform: translateY(-1px);
+.sf-player-controls button:hover:not(:disabled),
+.sf-player-footer button:hover,
+.sf-player-queue-head button:hover,
+.sf-player-queue button:hover {
+  background: rgba(255,255,255,.17);
 }
-
 .sf-player-controls button:disabled {
   cursor: not-allowed;
-  opacity: .35;
+  opacity: .28;
 }
-
 .sf-player-controls .sf-player-play {
-  background: #111111;
-  color: #ffffff;
+  min-width: 58px;
+  background: #ffffff;
+  color: #17151c;
 }
+.sf-player-controls [data-favorite] { color: #ffd95a; font-size: 1rem; }
 
-.sf-player-footer {
-  border-top: 1.5px solid #111111;
-  margin-top: .8rem;
-  padding-top: .65rem;
+.sf-player-expanded {
+  display: none;
+  gap: .65rem;
+  padding: .8rem .35rem .25rem;
+  border-top: 1px solid rgba(255,255,255,.1);
+  margin-top: .6rem;
 }
+.sf-continuous-player.is-expanded .sf-player-expanded { display: grid; }
+.sf-continuous-player.is-expanded [data-expand] { transform: rotate(180deg); }
 
+.sf-player-topline,
+.sf-player-footer,
+.sf-player-queue-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: .6rem;
+  color: #aaa3b2;
+  font-size: .62rem;
+  font-weight: 800;
+  letter-spacing: .07em;
+}
 .sf-player-footer label {
   align-items: center;
   display: flex;
   gap: .35rem;
 }
-
-.sf-player-footer input {
-  max-width: 90px;
-}
-
-.sf-player-footer button,
-.sf-player-up-next button {
-  background: transparent;
-  border: 1.5px solid #111111;
-  border-radius: 999px;
-  cursor: pointer;
-  font: inherit;
-  font-weight: 900;
-  padding: .25rem .55rem;
-}
-
-.sf-player-up-next {
-  border-top: 1.5px solid #111111;
-  font-size: .72rem;
-  font-weight: 800;
-  margin-top: .7rem;
-  padding-top: .65rem;
-}
-
-.sf-player-up-next summary {
-  cursor: pointer;
-  letter-spacing: .08em;
-}
-
-.sf-player-up-next ol {
+.sf-player-footer input { max-width: 90px; }
+.sf-player-status { color: #8ce0b7; }
+.sf-player-queue-head > div { display: flex; gap: .3rem; }
+.sf-player-queue {
   display: grid;
-  gap: .4rem;
+  gap: .35rem;
+  max-height: 210px;
+  overflow-y: auto;
   list-style: none;
-  margin: .6rem 0 0;
+  margin: 0;
   padding: 0;
 }
-
-.sf-player-up-next li {
+.sf-player-queue li {
   align-items: center;
-  background: rgba(255, 255, 255, .55);
-  border: 1.5px solid #111111;
-  border-radius: 10px;
+  background: rgba(255,255,255,.055);
+  border-radius: 9px;
   cursor: grab;
   display: grid;
   gap: .5rem;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr auto auto;
   padding: .45rem .55rem;
+  color: #ded9e4;
+  font-size: .72rem;
 }
-
-.sf-player-up-next li.is-dragging {
-  opacity: .45;
+.sf-player-queue li.is-dragging { opacity: .45; }
+.sf-player-video { display: none; }
+.sf-player-video.is-visible { display: block; }
+.sf-player-video video {
+  display: block;
+  max-height: 320px;
+  width: 100%;
+  border-radius: 13px;
+  background: #000;
 }
+audio, video[data-video] { display: none; }
 
-@media (max-width: 620px) {
+@media (max-width: 680px) {
+  .sf-continuous-player {
+    border-radius: 17px;
+  }
+  .sf-player-art { flex-basis: 44px; height: 44px; }
+  .sf-player-meta span { display: none; }
   .sf-player-controls {
-    grid-template-columns: .6fr 1.3fr .6fr .6fr 1fr;
+    gap: .15rem;
   }
-
-  .sf-player-footer > :last-child {
-    display: none;
-  }
+  .sf-player-controls button { min-height: 32px; padding: 0 .42rem; }
+  .sf-player-controls [data-favorite] { display: none; }
 }
 """
 
@@ -277,9 +281,29 @@ const formatTime = (seconds) => {
 export default function(component) {
   const { data, parentElement, setTriggerValue } = component;
   const root = parentElement.querySelector(".sf-continuous-player");
+  const componentRoot = parentElement.getRootNode();
+  const componentHost = componentRoot.host ?? parentElement;
+  const dockContainer = componentHost.closest("[data-testid='stElementContainer']")
+    ?? parentElement.closest("[data-testid='stElementContainer']");
+  const dockTarget = dockContainer ?? componentHost ?? parentElement;
+  const positionDock = () => {
+    const mobile = window.innerWidth <= 680;
+    Object.assign(dockTarget.style, {
+      bottom: mobile ? "10px" : "22px",
+      left: "auto",
+      position: "fixed",
+      right: mobile ? "10px" : "24px",
+      width: mobile ? "calc(100vw - 20px)" : "min(700px, calc(100vw - 48px))",
+      zIndex: "2147483000",
+    });
+  };
+  dockTarget.setAttribute("data-streamfetch-player-dock", "");
+  positionDock();
+  window.addEventListener("resize", positionDock);
   const audio = root.querySelector("[data-audio]");
   const video = root.querySelector("[data-video]");
   const videoSlot = root.querySelector("[data-video-slot]");
+  const mediaIcon = root.querySelector("[data-media-icon]");
   const title = root.querySelector("[data-title]");
   const byline = root.querySelector("[data-byline]");
   const status = root.querySelector("[data-status]");
@@ -292,6 +316,9 @@ export default function(component) {
   const favorite = root.querySelector("[data-favorite]");
   const repeat = root.querySelector("[data-repeat]");
   const crossfade = root.querySelector("[data-crossfade]");
+  const expand = root.querySelector("[data-expand]");
+  const shuffle = root.querySelector("[data-shuffle]");
+  const clear = root.querySelector("[data-clear]");
   const volume = root.querySelector("[data-volume]");
   const queue = root.querySelector("[data-queue]");
   const queueList = root.querySelector("[data-queue-list]");
@@ -301,6 +328,7 @@ export default function(component) {
     nextTrack: null,
     fadeTimer: null,
     restoring: false,
+    expanded: false,
   };
   state.nextTrack = data.next ?? null;
   state.queueItems = data.queue ?? [];
@@ -317,6 +345,7 @@ export default function(component) {
     next.disabled = !state.nextTrack;
     repeat.textContent = `REPEAT ${data.repeat_mode.toUpperCase()}`;
     crossfade.textContent = `XF ${data.crossfade_seconds}S`;
+    mediaIcon.textContent = track.media_type === "video" ? "▶" : "♫";
     queue.textContent = data.queue_count
       ? `QUEUE · ${data.queue_count}`
       : "QUEUE EMPTY";
@@ -336,7 +365,12 @@ export default function(component) {
       playNow.type = "button";
       playNow.textContent = "PLAY";
       playNow.onclick = () => emit("jump", { entry_id: item.entry_id });
-      row.append(handle, label, playNow);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "×";
+      remove.setAttribute("aria-label", `Remove ${item.title} from queue`);
+      remove.onclick = () => emit("remove", { entry_id: item.entry_id });
+      row.append(handle, label, playNow, remove);
       row.ondragstart = () => {
         state.draggedId = item.entry_id;
         row.classList.add("is-dragging");
@@ -519,6 +553,13 @@ export default function(component) {
     crossfade.textContent = `XF ${seconds}S`;
     emit("crossfade", { seconds });
   };
+  expand.onclick = () => {
+    state.expanded = !state.expanded;
+    root.classList.toggle("is-expanded", state.expanded);
+    expand.setAttribute("aria-expanded", String(state.expanded));
+  };
+  shuffle.onclick = () => emit("shuffle");
+  clear.onclick = () => emit("clear");
   seek.oninput = () => {
     const media = activeMedia();
     if (Number.isFinite(media.duration)) {
@@ -558,6 +599,8 @@ export default function(component) {
   }
 
   renderQueue();
+  root.classList.toggle("is-expanded", state.expanded);
+  expand.setAttribute("aria-expanded", String(state.expanded));
 
   if (state.nextTrack?.media_type === "audio") {
     const preloader = new Audio();
@@ -567,6 +610,11 @@ export default function(component) {
   }
 
   return () => {
+    window.removeEventListener("resize", positionDock);
+    dockTarget.removeAttribute("data-streamfetch-player-dock");
+    for (const property of ["bottom", "left", "position", "right", "width", "z-index"]) {
+      dockTarget.style.removeProperty(property);
+    }
     for (const media of [audio, video]) {
       media.removeEventListener("ended", onEnded);
       media.removeEventListener("play", onPlay);

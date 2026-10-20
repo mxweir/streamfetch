@@ -1,10 +1,13 @@
 from streamfetch.theme import APP_CSS, HERO_HTML, LEGAL_HTML
 
 
-def test_theme_contains_reference_palette_and_shapes():
-    for color in ("#dceeff", "#4da2ff", "#55db9c", "#e9ccff", "#fb4903", "#ffd731"):
+def test_theme_contains_premium_palette_and_surfaces():
+    for color in ("#17151c", "#fffdf7", "#75b8ff", "#8ce0b7", "#d9b8ff", "#ffd95a"):
         assert color in APP_CSS
-    assert "border-radius: 9999px" in APP_CSS
+    assert "backdrop-filter: blur" in APP_CSS
+    assert "border-radius: 30px" in APP_CSS
+    assert 'stBidiComponentIsolated' in APP_CSS
+    assert "position: fixed" in APP_CSS
     assert "box-shadow: none" in APP_CSS
 
 

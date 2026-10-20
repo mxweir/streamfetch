@@ -271,6 +271,13 @@ def render_download_view() -> None:
     render_download_sidebar()
     manager = get_download_manager()
 
+    st.markdown(
+        '<div class="sf-view-heading"><h2>Download studio</h2>'
+        '<p>Paste one or more permitted links, choose a format, and let the queue run.</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
     with st.container(border=True):
         st.markdown(SOURCE_LABEL_HTML, unsafe_allow_html=True)
         st.text_input("Output directory", value=default_download_dir(), key="output_dir")
@@ -314,6 +321,11 @@ def render_library_view() -> None:
     library = MediaLibrary(root)
 
     st.markdown(LIBRARY_LABEL_HTML, unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sf-view-heading"><h2>Your library</h2>'
+        '<p>Everything downloaded, imported, organized, and ready to play.</p></div>',
+        unsafe_allow_html=True,
+    )
     refresh_col, path_col = st.columns([1, 3])
     refresh_clicked = refresh_col.button(
         "Refresh library",
@@ -345,20 +357,28 @@ def render_library_view() -> None:
 
     render_player(library)
 
-    metric_columns = st.columns(5)
-    metric_columns[0].metric("Items", stats.total)
-    metric_columns[1].metric("Audio", stats.audio)
-    metric_columns[2].metric("Video", stats.video)
-    metric_columns[3].metric("Artists", stats.artists)
-    metric_columns[4].metric("Storage", human_size(stats.size_bytes))
+    st.markdown(
+        '<div class="sf-stats">'
+        f'<div class="sf-stat"><span>Items</span><strong>{stats.total}</strong></div>'
+        f'<div class="sf-stat"><span>Audio</span><strong>{stats.audio}</strong></div>'
+        f'<div class="sf-stat"><span>Video</span><strong>{stats.video}</strong></div>'
+        f'<div class="sf-stat"><span>Artists</span><strong>{stats.artists}</strong></div>'
+        f'<div class="sf-stat"><span>Storage</span>'
+        f'<strong>{human_size(stats.size_bytes)}</strong></div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
-    section = st.radio(
+    section = st.segmented_control(
         "Library section",
-        ["Browse", "Discover", "Favorites", "Playlists", "History"],
-        horizontal=True,
-        label_visibility="collapsed",
+        ["Home", "Browse", "Discover", "Favorites", "Playlists", "History"],
+        default="Home",
+        selection_mode="single",
         key="library_section",
     )
+    if section == "Home":
+        render_library_home(library)
+        return
     if section == "History":
         render_history(library)
         return
@@ -379,7 +399,36 @@ def render_library_view() -> None:
         total_matches = library.count_items(search, media_type)
         items = library.list_items(search=search, media_type=media_type, sort=sort)
 
-    render_media_grid(library, items, total_matches)
+    render_media_grid(library, items, total_matches, key_prefix=section.lower())
+
+
+def render_library_home(library: MediaLibrary) -> None:
+    recent = library.recently_added(limit=6)
+    if not recent:
+        st.info(
+            "Your library is ready. Download something or import a media folder to begin."
+        )
+        return
+
+    st.markdown("### Fresh in your library")
+    st.caption("The newest additions, ready for a first listen.")
+    render_media_grid(
+        library,
+        recent,
+        len(recent),
+        key_prefix="home_recent",
+    )
+
+    most_played = library.most_played(limit=6)
+    if most_played:
+        st.markdown("### Back on repeat")
+        st.caption("Your most-played tracks and videos.")
+        render_media_grid(
+            library,
+            most_played,
+            len(most_played),
+            key_prefix="home_most_played",
+        )
 
 
 def render_media_grid(
@@ -387,6 +436,7 @@ def render_media_grid(
     items: tuple[MediaItem, ...],
     total_matches: int,
     active_playlist_id: int | None = None,
+    key_prefix: str = "library",
 ) -> None:
     if not items:
         st.info("No matching media found in this collection.")
@@ -399,7 +449,7 @@ def render_media_grid(
     caption_col.caption(f"Showing {shown} of {total_matches} matching item(s).")
     if play_col.button(
         "▶ Play collection",
-        key=f"play_collection_{active_playlist_id}_{shown}",
+        key=f"play_collection_{key_prefix}_{active_playlist_id}_{shown}",
         width="stretch",
     ):
         library.replace_queue([item.path for item in items[1:]])
@@ -414,6 +464,7 @@ def render_media_grid(
                     favorite_paths,
                     playlists,
                     active_playlist_id,
+                    key_prefix,
                 )
 
 
@@ -423,9 +474,11 @@ def render_library_item(
     favorite_paths: set[str],
     playlists: tuple[Playlist, ...],
     active_playlist_id: int | None = None,
+    key_prefix: str = "library",
 ) -> None:
     relative_path = library.relative_path(item.path)
-    item_key = hashlib.sha256(relative_path.encode()).hexdigest()[:12]
+    digest = hashlib.sha256(relative_path.encode()).hexdigest()[:12]
+    item_key = f"{key_prefix}_{digest}"
     with st.container(border=True):
         st.markdown('<span class="sf-library-card-marker"></span>', unsafe_allow_html=True)
         render_media_art(item)
@@ -451,32 +504,39 @@ def render_library_item(
                 annotations.append(" · ".join(f"#{tag}" for tag in item.tags))
             st.caption("  ".join(annotations))
 
-        play_col, favorite_col = st.columns(2)
+        play_col, favorite_col, more_col = st.columns([2, 1, 1])
         if play_col.button("▶ Play", key=f"play_{item_key}", width="stretch"):
             select_media(library, item)
-        favorite_label = "♥ Saved" if relative_path in favorite_paths else "♡ Favorite"
+        favorite_label = "♥" if relative_path in favorite_paths else "♡"
         if favorite_col.button(
             favorite_label,
             key=f"favorite_{item_key}",
             width="stretch",
+            help="Remove favorite" if relative_path in favorite_paths else "Add favorite",
         ):
             library.toggle_favorite(item.path)
             st.rerun()
-        next_col, queue_col = st.columns(2)
-        if next_col.button("Play next", key=f"next_{item_key}", width="stretch"):
-            library.enqueue(item.path, play_next=True)
-            st.toast(f"{item.title} will play next.")
-            st.rerun()
-        if queue_col.button("Add to queue", key=f"queue_{item_key}", width="stretch"):
-            library.enqueue(item.path)
-            st.toast(f"Added {item.title} to the queue.")
-            st.rerun()
+        with more_col.popover(
+            "•••",
+            key=f"more_{item_key}",
+            help="More actions",
+            width="stretch",
+        ):
+            st.markdown(f"**{item.title}**")
+            next_col, queue_col = st.columns(2)
+            if next_col.button("Play next", key=f"next_{item_key}", width="stretch"):
+                library.enqueue(item.path, play_next=True)
+                st.toast(f"{item.title} will play next.")
+                st.rerun()
+            if queue_col.button("Queue", key=f"queue_{item_key}", width="stretch"):
+                library.enqueue(item.path)
+                st.toast(f"Added {item.title} to the queue.")
+                st.rerun()
 
-        if playlists:
-            with st.expander("Add to playlist"):
+            if playlists:
                 playlist_names = {playlist.id: playlist.name for playlist in playlists}
                 playlist_id = st.selectbox(
-                    "Playlist",
+                    "Add to playlist",
                     list(playlist_names),
                     format_func=playlist_names.get,
                     key=f"playlist_select_{item_key}",
@@ -485,55 +545,56 @@ def render_library_item(
                     library.add_to_playlist(playlist_id, item.path)
                     st.toast(f"Added {item.title} to {playlist_names[playlist_id]}.")
                     st.rerun()
-        if active_playlist_id is not None and st.button(
-            "Remove from playlist",
-            key=f"playlist_remove_{active_playlist_id}_{item_key}",
-            width="stretch",
-        ):
-            library.remove_from_playlist(active_playlist_id, item.path)
-            st.rerun()
+            if active_playlist_id is not None and st.button(
+                "Remove from playlist",
+                key=f"playlist_remove_{active_playlist_id}_{item_key}",
+                width="stretch",
+            ):
+                library.remove_from_playlist(active_playlist_id, item.path)
+                st.rerun()
 
-        modified = datetime.fromtimestamp(item.modified_at).strftime("%Y-%m-%d %H:%M")
-        with st.expander("File details"):
-            st.caption(f"Modified {modified}")
+            st.divider()
+            modified = datetime.fromtimestamp(item.modified_at).strftime("%Y-%m-%d %H:%M")
+            st.caption(f"{item.format} · Modified {modified}")
             st.code(str(item.path), language=None)
-        render_metadata_editor(library, item, item_key)
+            st.divider()
+            render_metadata_editor(library, item, item_key)
 
 
 def render_metadata_editor(library: MediaLibrary, item: MediaItem, item_key: str) -> None:
-    with st.expander("Edit metadata"):
-        st.caption("Edits are stored in the local library database; the media file is unchanged.")
-        with st.form(f"metadata_{item_key}"):
-            title = st.text_input("Title", value=item.title)
-            artist = st.text_input("Artist", value=item.artist)
-            album = st.text_input("Album", value=item.album)
-            rating = st.select_slider(
-                "Rating",
-                options=[0, 1, 2, 3, 4, 5],
-                value=item.rating,
-                format_func=lambda value: "Unrated" if value == 0 else "★" * value,
+    st.markdown("**Edit display metadata**")
+    st.caption("Saved locally; the media file stays unchanged.")
+    with st.form(f"metadata_{item_key}"):
+        title = st.text_input("Title", value=item.title)
+        artist = st.text_input("Artist", value=item.artist)
+        album = st.text_input("Album", value=item.album)
+        rating = st.select_slider(
+            "Rating",
+            options=[0, 1, 2, 3, 4, 5],
+            value=item.rating,
+            format_func=lambda value: "Unrated" if value == 0 else "★" * value,
+        )
+        tags = st.text_input(
+            "Tags",
+            value=", ".join(item.tags),
+            placeholder="focus, live, workout",
+        )
+        submitted = st.form_submit_button("Save metadata", width="stretch")
+    if submitted:
+        try:
+            library.update_metadata(
+                item.path,
+                title=title,
+                artist=artist,
+                album=album,
+                rating=rating,
+                tags=[tag for tag in tags.split(",")],
             )
-            tags = st.text_input(
-                "Tags",
-                value=", ".join(item.tags),
-                placeholder="focus, live, workout",
-            )
-            submitted = st.form_submit_button("Save metadata", width="stretch")
-        if submitted:
-            try:
-                library.update_metadata(
-                    item.path,
-                    title=title,
-                    artist=artist,
-                    album=album,
-                    rating=rating,
-                    tags=[tag for tag in tags.split(",")],
-                )
-            except ValueError as exc:
-                st.error(str(exc))
-            else:
-                st.toast("Metadata saved.")
-                st.rerun()
+        except ValueError as exc:
+            st.error(str(exc))
+        else:
+            st.toast("Metadata saved.")
+            st.rerun()
 
 
 def render_library_import(library: MediaLibrary) -> None:
@@ -607,7 +668,12 @@ def render_discover(library: MediaLibrary) -> None:
 
     collection_sort = sort if sort != "newest" else "collection"
     items = filter_collection(items, search, media_type, collection_sort)
-    render_media_grid(library, items, len(items))
+    render_media_grid(
+        library,
+        items,
+        len(items),
+        key_prefix=f"discover_{mode.lower().replace(' ', '_')}",
+    )
 
 
 def render_duplicates(library: MediaLibrary) -> None:
@@ -663,56 +729,28 @@ def render_player(library: MediaLibrary) -> None:
     current = library.current_item()
     queue = library.queue()
     if current is None:
-        st.info("Choose an item from the library to start the local player.")
+        st.info("Choose an item to open the floating player.")
         if queue and st.button("Play first queued item", type="primary"):
             item = library.take_queue_entry()
             if item:
                 select_media(library, item)
         return
 
-    with st.container(border=True):
-        st.markdown('<span class="sf-player-marker"></span>', unsafe_allow_html=True)
-        art_col, player_col = st.columns([1, 3])
-        with art_col:
-            render_media_art(current)
-        with player_col:
-            autoplay = st.session_state.pop("player_autoplay", False)
-            previous = library.previous_item(current.path)
-            current_is_favorite = library.relative_path(current.path) in library.favorite_paths()
-            player_data = build_player_data(
-                current,
-                queue,
-                favorite=current_is_favorite,
-                can_previous=previous is not None,
-                autoplay=autoplay,
-                repeat_mode=library.player_setting("repeat", "off"),
-                crossfade_seconds=int(library.player_setting("crossfade", "0")),
-                resume_position=library.playback_position(current.path),
-            )
-            result = render_continuous_player(player_data)
-            handle_player_action(library, result, previous)
-
-        with st.expander(f"Queue · {len(queue)} item(s)"):
-            if not queue:
-                st.caption("Your queue is empty.")
-            for entry in queue:
-                title_col, play_col, remove_col = st.columns([3, 1, 1])
-                title_col.write(f"{entry.item.title} — {entry.item.artist}")
-                if play_col.button("Play", key=f"queue_play_{entry.id}"):
-                    item = library.take_queue_entry(entry.id)
-                    if item:
-                        select_media(library, item)
-                if remove_col.button("Remove", key=f"queue_remove_{entry.id}"):
-                    library.remove_queue_entry(entry.id)
-                    st.rerun()
-            if queue:
-                shuffle_col, clear_col = st.columns(2)
-                if shuffle_col.button("Shuffle queue", key="queue_shuffle"):
-                    library.shuffle_queue()
-                    st.rerun()
-                if clear_col.button("Clear queue", key="queue_clear"):
-                    library.clear_queue()
-                    st.rerun()
+    autoplay = st.session_state.pop("player_autoplay", False)
+    previous = library.previous_item(current.path)
+    current_is_favorite = library.relative_path(current.path) in library.favorite_paths()
+    player_data = build_player_data(
+        current,
+        queue,
+        favorite=current_is_favorite,
+        can_previous=previous is not None,
+        autoplay=autoplay,
+        repeat_mode=library.player_setting("repeat", "off"),
+        crossfade_seconds=int(library.player_setting("crossfade", "0")),
+        resume_position=library.playback_position(current.path),
+    )
+    result = render_continuous_player(player_data)
+    handle_player_action(library, result, previous)
 
 
 def handle_player_action(library: MediaLibrary, result, previous: MediaItem | None) -> None:
@@ -754,6 +792,15 @@ def handle_player_action(library: MediaLibrary, result, previous: MediaItem | No
         if isinstance(entry_ids, list) and all(isinstance(value, int) for value in entry_ids):
             library.reorder_queue(entry_ids)
             st.rerun()
+    if action_type == "remove" and isinstance(action.get("entry_id"), int):
+        library.remove_queue_entry(action["entry_id"])
+        st.rerun()
+    if action_type == "shuffle":
+        library.shuffle_queue()
+        st.rerun()
+    if action_type == "clear":
+        library.clear_queue()
+        st.rerun()
     if action_type == "repeat" and action.get("mode") in {"off", "all", "one"}:
         library.set_player_setting("repeat", action["mode"])
         st.rerun()
@@ -820,7 +867,13 @@ def render_playlists(library: MediaLibrary) -> None:
         st.session_state.library_media_type,
         st.session_state.library_sort,
     )
-    render_media_grid(library, items, len(items), active_playlist_id=selected_id)
+    render_media_grid(
+        library,
+        items,
+        len(items),
+        active_playlist_id=selected_id,
+        key_prefix=f"playlist_{selected_id}",
+    )
 
 
 def render_history(library: MediaLibrary) -> None:
@@ -874,12 +927,11 @@ def filter_collection(
 
 def main() -> None:
     render_header()
-    st.markdown('<div class="sf-nav-label">Choose your workspace</div>', unsafe_allow_html=True)
-    workspace = st.radio(
+    workspace = st.segmented_control(
         "Workspace",
         ["Download", "Library"],
-        horizontal=True,
-        label_visibility="collapsed",
+        default="Library",
+        selection_mode="single",
         key="workspace",
     )
     if workspace == "Library":
