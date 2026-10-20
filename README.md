@@ -4,23 +4,26 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 
-StreamFetch is a local Streamlit interface for downloading YouTube media with
-[`yt-dlp`](https://github.com/yt-dlp/yt-dlp). It supports individual videos,
-playlists, channel URLs, audio extraction, format and quality selection,
-metadata, thumbnails, subtitles, browser cookies, and duplicate protection.
+StreamFetch is a local Streamlit interface for downloading YouTube and
+SoundCloud media with [`yt-dlp`](https://github.com/yt-dlp/yt-dlp). It supports
+YouTube videos, playlists, and channels as well as SoundCloud tracks, sets, and
+profiles. Format and quality selection, metadata, thumbnails, subtitles,
+browser cookies, and duplicate protection are built in.
 
 > [!IMPORTANT]
 > Download only media you created, media in the public domain, or media you have
 > permission to download. You are responsible for respecting copyright,
-> YouTube's terms, and the laws that apply to you. This project does not bypass
-> DRM and is not affiliated with YouTube or Google.
+> each platform's terms, and the laws that apply to you. This project does not
+> bypass DRM and is not affiliated with YouTube, Google, or SoundCloud.
 
 ## Features
 
 - Video output as MP4, MKV, or WebM
 - Audio output as MP3, M4A, Opus, FLAC, or WAV
 - Configurable video resolution and audio quality
-- Single videos, playlists, multiple URLs, and complete channel/tab URLs
+- YouTube videos, playlists, multiple URLs, and complete channel/tab URLs
+- SoundCloud tracks, sets/playlists, profiles, and share links
+- Mixed YouTube and SoundCloud lists in audio mode
 - Optional metadata, thumbnails, and embedded subtitles
 - Configurable playlist/channel safety limit (50 items by default)
 - Download archive that prevents accidental duplicate downloads
@@ -60,10 +63,11 @@ pip install -e .
 streamlit run app.py
 ```
 
-Streamlit opens `http://localhost:8501`. Paste one YouTube URL per line, choose
-the output settings, confirm that you have permission, and start the download.
-Files are stored in `downloads/` by default and organized by uploader and
-playlist.
+Streamlit opens `http://localhost:8501`. Paste one YouTube or SoundCloud URL per
+line, choose the output settings, confirm that you have permission, and start
+the download. SoundCloud sources support audio output; YouTube supports both
+video and audio. Files are stored in `downloads/` by default and organized by
+uploader and collection.
 
 ## Docker
 
@@ -85,7 +89,8 @@ pytest
 ```
 
 The code is split into a Streamlit UI and a small `streamfetch` core package.
-Format selection and yt-dlp options are unit-tested without contacting YouTube.
+Format selection and yt-dlp options are unit-tested without contacting either
+platform.
 
 ## Deployment warning
 

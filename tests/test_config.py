@@ -5,6 +5,7 @@ import pytest
 from streamfetch.config import (
     ValidationError,
     build_ydl_options,
+    detect_source,
     human_size,
     parse_subtitle_languages,
     parse_urls,
@@ -29,6 +30,28 @@ def test_parse_urls_deduplicates_and_preserves_order():
     assert parse_urls(raw) == (
         "https://youtu.be/abc",
         "https://www.youtube.com/watch?v=xyz",
+    )
+
+
+@pytest.mark.parametrize(
+    ("url", "source"),
+    [
+        ("https://youtu.be/abc", "youtube"),
+        ("https://soundcloud.com/artist/track", "soundcloud"),
+        ("https://soundcloud.com/artist/sets/collection", "soundcloud"),
+        ("https://on.soundcloud.com/example", "soundcloud"),
+        ("https://snd.sc/example", "soundcloud"),
+    ],
+)
+def test_detect_source_accepts_supported_urls(url, source):
+    assert detect_source(url) == source
+
+
+def test_parse_urls_accepts_mixed_audio_sources():
+    raw = "https://youtu.be/abc\nhttps://soundcloud.com/artist/track"
+    assert parse_urls(raw) == (
+        "https://youtu.be/abc",
+        "https://soundcloud.com/artist/track",
     )
 
 
@@ -62,6 +85,22 @@ def test_build_audio_options_adds_extractor():
     assert extractor["key"] == "FFmpegExtractAudio"
     assert extractor["preferredcodec"] == "mp3"
     assert extractor["preferredquality"] == "192K"
+
+
+def test_soundcloud_audio_options_are_supported():
+    request = make_request(
+        urls=("https://soundcloud.com/artist/track",),
+        media_type=MediaType.AUDIO,
+        container="mp3",
+        quality="192K",
+    )
+    assert build_ydl_options(request)["format"] == "bestaudio/best"
+
+
+def test_soundcloud_video_request_is_rejected():
+    request = make_request(urls=("https://soundcloud.com/artist/track",))
+    with pytest.raises(ValidationError, match="audio downloads only"):
+        build_ydl_options(request)
 
 
 def test_disable_playlist_and_unlimited_items():
