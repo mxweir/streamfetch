@@ -18,29 +18,60 @@ from streamfetch.config import (
     parse_urls,
     validate_request,
 )
-from streamfetch.downloader import Downloader, DownloaderError
-from streamfetch.jobs import DownloadJobManager, JobStatus
+from streamfetch.downloader import Downloader, DownloaderError, resolve_selected_urls
+from streamfetch.i18n import LANGUAGES, default_language, player_labels, translate
+from streamfetch.jobs import DownloadJobManager, JobStatus, default_job_state_path
 from streamfetch.library import MediaItem, MediaLibrary, Playlist
 from streamfetch.models import DownloadRequest, MediaType
 from streamfetch.player import build_player_data, render_continuous_player
 from streamfetch.theme import (
     APP_CSS,
-    HERO_HTML,
-    LEGAL_HTML,
-    LIBRARY_LABEL_HTML,
-    LIBRARY_SIDEBAR_HTML,
-    PREVIEW_LABEL_HTML,
-    RESULT_LABEL_HTML,
-    SIDEBAR_HEADER_HTML,
-    SOURCE_LABEL_HTML,
+    hero_html,
+    legal_html,
+    library_sidebar_html,
+    sidebar_header_html,
 )
 
-st.set_page_config(page_title="StreamFetch", page_icon="⚡", layout="wide")
+_source_favicon = Path(__file__).resolve().parent / "docs" / "assets" / "streamfetch-mark.svg"
+_package_favicon = Path(__file__).resolve().parent / "assets" / "streamfetch-mark.svg"
+_favicon = next(
+    (str(path) for path in (_source_favicon, _package_favicon) if path.exists()),
+    "🎵",
+)
+st.set_page_config(page_title="StreamFetch", page_icon=_favicon, layout="wide")
+
+if "ui_language" not in st.session_state:
+    st.session_state.ui_language = default_language()
+
+
+def t(text: str, **values: object) -> str:
+    return translate(text, st.session_state.get("ui_language"), **values)
+
+
+def render_language_picker() -> None:
+    st.selectbox(
+        t("Language"),
+        list(LANGUAGES),
+        key="ui_language",
+    )
+
+
+def section_label(text: str) -> str:
+    return f'<div class="sf-section-label">{html.escape(t(text))}</div>'
 
 def render_header() -> None:
     st.markdown(APP_CSS, unsafe_allow_html=True)
-    st.markdown(HERO_HTML, unsafe_allow_html=True)
-    st.markdown(LEGAL_HTML, unsafe_allow_html=True)
+    st.markdown(hero_html(t), unsafe_allow_html=True)
+    st.markdown(legal_html(t), unsafe_allow_html=True)
+
+
+def preview_selection_key(source_url: str) -> str:
+    digest = hashlib.sha256(source_url.encode("utf-8")).hexdigest()[:12]
+    return f"preview_selection_{digest}"
+
+
+def preview_editor_key(source_url: str) -> str:
+    return preview_selection_key(source_url).replace("selection", "editor")
 
 
 def render_preview(preview) -> None:
@@ -59,10 +90,53 @@ def render_preview(preview) -> None:
                 details.append(f"{preview.entry_count} item(s)")
             st.caption(" · ".join(details))
             if preview.entries:
-                with st.expander(f"First {len(preview.entries)} entries"):
-                    for index, entry in enumerate(preview.entries, start=1):
-                        duration = format_duration(entry.duration)
-                        st.write(f"{index}. {entry.title}{duration}")
+                selectable = [entry for entry in preview.entries if entry.webpage_url]
+                if selectable:
+                    selection_key = preview_selection_key(preview.source_url)
+                    current = set(
+                        st.session_state.get(
+                            selection_key,
+                            [entry.webpage_url for entry in selectable],
+                        )
+                    )
+                    rows = [
+                        {
+                            "Selected": entry.webpage_url in current,
+                            "Title": entry.title,
+                            "Duration": format_duration(entry.duration).removeprefix(" — "),
+                            "URL": entry.webpage_url,
+                        }
+                        for entry in selectable
+                    ]
+                    with st.expander(t("Select items"), expanded=True):
+                        edited = st.data_editor(
+                            rows,
+                            column_config={
+                                "Selected": st.column_config.CheckboxColumn(t("Selected")),
+                                "Title": st.column_config.TextColumn(t("Title")),
+                                "Duration": st.column_config.TextColumn(t("Duration")),
+                            },
+                            column_order=("Selected", "Title", "Duration"),
+                            disabled=("Title", "Duration", "URL"),
+                            hide_index=True,
+                            height=min(420, 36 * len(rows) + 38),
+                            width="stretch",
+                            key=preview_editor_key(preview.source_url),
+                        )
+                    selected = tuple(row["URL"] for row in edited if row["Selected"])
+                    st.session_state[selection_key] = selected
+                    st.caption(
+                        t(
+                            "{count} of {total} selected",
+                            count=len(selected),
+                            total=len(selectable),
+                        )
+                    )
+                elif preview.entries:
+                    with st.expander(t("First {count} entries", count=len(preview.entries))):
+                        for index, entry in enumerate(preview.entries, start=1):
+                            duration = format_duration(entry.duration)
+                            st.write(f"{index}. {entry.title}{duration}")
 
 
 def format_duration(seconds: int | None) -> str:
@@ -137,21 +211,32 @@ def build_request(urls: tuple[str, ...]) -> DownloadRequest:
 
 def render_download_sidebar() -> None:
     with st.sidebar:
-        st.markdown(SIDEBAR_HEADER_HTML, unsafe_allow_html=True)
-        st.radio("Media type", ["video", "audio"], horizontal=True, key="media_type")
+        st.markdown(sidebar_header_html(t), unsafe_allow_html=True)
+        render_language_picker()
+        st.radio(
+            t("Media type"),
+            ["video", "audio"],
+            horizontal=True,
+            format_func=t,
+            key="media_type",
+        )
 
         if st.session_state.media_type == "video":
-            st.selectbox("Container", ["mp4", "mkv", "webm"], key="video_format")
+            st.selectbox(t("Container"), ["mp4", "mkv", "webm"], key="video_format")
             st.selectbox(
-                "Maximum resolution",
+                t("Maximum resolution"),
                 ["best", "2160p", "1440p", "1080p", "720p", "480p", "360p"],
                 index=3,
                 key="video_quality",
             )
         else:
-            st.selectbox("Audio format", ["mp3", "m4a", "opus", "flac", "wav"], key="audio_format")
             st.selectbox(
-                "Audio quality",
+                t("Audio format"),
+                ["mp3", "m4a", "opus", "flac", "wav"],
+                key="audio_format",
+            )
+            st.selectbox(
+                t("Audio quality"),
                 ["0", "320K", "256K", "192K", "128K"],
                 index=3,
                 key="audio_quality",
@@ -160,13 +245,13 @@ def render_download_sidebar() -> None:
 
         st.divider()
         st.checkbox(
-            "Process playlists, channels, sets, and profiles",
+            t("Process playlists, channels, sets, and profiles"),
             value=True,
             key="allow_playlists",
         )
-        st.checkbox("Limit collection size", value=True, key="use_limit")
+        st.checkbox(t("Limit collection size"), value=True, key="use_limit")
         st.number_input(
-            "Maximum items per source",
+            t("Maximum items per source"),
             min_value=1,
             max_value=10_000,
             value=50,
@@ -174,25 +259,25 @@ def render_download_sidebar() -> None:
             key="max_items",
         )
         st.divider()
-        st.checkbox("Embed metadata", value=True, key="embed_metadata")
-        st.checkbox("Embed thumbnail", value=True, key="embed_thumbnail")
+        st.checkbox(t("Embed metadata"), value=True, key="embed_metadata")
+        st.checkbox(t("Embed thumbnail"), value=True, key="embed_thumbnail")
         st.checkbox(
-            "Embed subtitles",
+            t("Embed subtitles"),
             value=False,
             disabled=st.session_state.media_type == "audio",
             key="embed_subtitles",
         )
         st.text_input(
-            "Subtitle languages",
+            t("Subtitle languages"),
             value="en,de",
             disabled=not st.session_state.embed_subtitles,
             help="Comma-separated yt-dlp language codes.",
             key="subtitle_languages",
         )
 
-        with st.expander("Advanced"):
+        with st.expander(t("Advanced")):
             st.selectbox(
-                "Use cookies from browser",
+                t("Use cookies from browser"),
                 ["None", "Chrome", "Firefox", "Edge", "Safari", "Brave"],
                 key="cookie_browser",
                 help=(
@@ -201,15 +286,15 @@ def render_download_sidebar() -> None:
                 ),
             )
             st.slider(
-                "Concurrent fragments",
+                t("Concurrent fragments"),
                 min_value=1,
                 max_value=16,
                 value=4,
                 key="concurrent_fragments",
             )
-            st.checkbox("Limit bandwidth", key="use_rate_limit")
+            st.checkbox(t("Limit bandwidth"), key="use_rate_limit")
             st.number_input(
-                "Bandwidth limit (MB/s)",
+                t("Bandwidth limit (MB/s)"),
                 min_value=0.1,
                 max_value=1000.0,
                 value=5.0,
@@ -217,25 +302,25 @@ def render_download_sidebar() -> None:
                 disabled=not st.session_state.use_rate_limit,
                 key="rate_limit_mbps",
             )
-            st.checkbox("Download a time range only", key="use_clip_range")
+            st.checkbox(t("Download a time range only"), key="use_clip_range")
             clip_start, clip_end = st.columns(2)
             clip_start.number_input(
-                "Start (seconds)",
+                t("Start (seconds)"),
                 min_value=0.0,
                 value=0.0,
                 disabled=not st.session_state.use_clip_range,
                 key="clip_start",
             )
             clip_end.number_input(
-                "End (seconds)",
+                t("End (seconds)"),
                 min_value=0.1,
                 value=60.0,
                 disabled=not st.session_state.use_clip_range,
                 key="clip_end",
             )
-            st.checkbox("Split files by chapters", key="split_chapters")
+            st.checkbox(t("Split files by chapters"), key="split_chapters")
             st.multiselect(
-                "Remove YouTube segments with SponsorBlock",
+                t("Remove YouTube segments with SponsorBlock"),
                 ["sponsor", "intro", "outro", "selfpromo", "interaction", "filler"],
                 key="sponsorblock_remove",
                 help="Applied only where SponsorBlock data is available.",
@@ -244,25 +329,26 @@ def render_download_sidebar() -> None:
 
 def render_library_sidebar() -> None:
     with st.sidebar:
-        st.markdown(LIBRARY_SIDEBAR_HTML, unsafe_allow_html=True)
+        st.markdown(library_sidebar_html(t), unsafe_allow_html=True)
+        render_language_picker()
         default_dir = st.session_state.get("output_dir", default_download_dir())
-        st.text_input("Library folder", value=default_dir, key="library_dir")
+        st.text_input(t("Library folder"), value=default_dir, key="library_dir")
         st.divider()
         st.text_input(
-            "Search",
-            placeholder="Title, artist, album, tag, or path",
+            t("Search"),
+            placeholder=t("Title, artist, album, tag, or path"),
             key="library_search",
         )
         st.selectbox(
-            "Media type",
+            t("Media type"),
             ["all", "audio", "video"],
-            format_func=str.title,
+            format_func=t,
             key="library_media_type",
         )
         st.selectbox(
-            "Sort by",
+            t("Sort by"),
             ["newest", "title", "artist", "largest", "oldest"],
-            format_func=str.title,
+            format_func=t,
             key="library_sort",
         )
 
@@ -270,19 +356,23 @@ def render_library_sidebar() -> None:
 def render_download_view() -> None:
     render_download_sidebar()
     manager = get_download_manager()
+    download_description = t(
+        "Paste one or more permitted links, choose a format, and let the queue run."
+    )
 
     st.markdown(
-        '<div class="sf-view-heading"><h2>Download studio</h2>'
-        '<p>Paste one or more permitted links, choose a format, and let the queue run.</p>'
+        '<div class="sf-view-heading">'
+        f'<h2>{html.escape(t("Download studio"))}</h2>'
+        f'<p>{html.escape(download_description)}</p>'
         '</div>',
         unsafe_allow_html=True,
     )
 
     with st.container(border=True):
-        st.markdown(SOURCE_LABEL_HTML, unsafe_allow_html=True)
-        st.text_input("Output directory", value=default_download_dir(), key="output_dir")
+        st.markdown(section_label("New download"), unsafe_allow_html=True)
+        st.text_input(t("Output directory"), value=default_download_dir(), key="output_dir")
         raw_urls = st.text_area(
-            "YouTube or SoundCloud URLs",
+            t("YouTube or SoundCloud URLs"),
             height=160,
             placeholder=(
                 "One URL per line:\n"
@@ -293,21 +383,23 @@ def render_download_view() -> None:
             ),
         )
         if "soundcloud.com" in raw_urls.lower() or "snd.sc/" in raw_urls.lower():
-            st.info("SoundCloud sources are audio-only. Select **Audio** in the sidebar.")
+            st.info(t("SoundCloud sources are audio-only. Select **Audio** in the sidebar."))
         accepted = st.checkbox(
-            "I have permission to download these items and accept responsibility for their use."
+            t(
+                "I have permission to download these items and accept responsibility for their use."
+            )
         )
 
         analyze_col, download_col, _ = st.columns([1, 1, 2])
-        analyze_clicked = analyze_col.button("Analyze", width="stretch")
+        analyze_clicked = analyze_col.button(t("Analyze"), width="stretch")
         download_clicked = download_col.button(
-            "Start download", type="primary", width="stretch", disabled=not accepted
+            t("Start download"), type="primary", width="stretch", disabled=not accepted
         )
 
     if analyze_clicked:
         analyze(raw_urls)
     if st.session_state.get("previews"):
-        st.markdown(PREVIEW_LABEL_HTML, unsafe_allow_html=True)
+        st.markdown(section_label("Source preview"), unsafe_allow_html=True)
         for preview in st.session_state.previews:
             render_preview(preview)
     if download_clicked:
@@ -320,19 +412,21 @@ def render_library_view() -> None:
     root = Path(st.session_state.library_dir).expanduser().resolve()
     library = MediaLibrary(root)
 
-    st.markdown(LIBRARY_LABEL_HTML, unsafe_allow_html=True)
+    st.markdown(section_label("Local library"), unsafe_allow_html=True)
     st.markdown(
-        '<div class="sf-view-heading"><h2>Your library</h2>'
-        '<p>Everything downloaded, imported, organized, and ready to play.</p></div>',
+        '<div class="sf-view-heading">'
+        f'<h2>{html.escape(t("Your library"))}</h2>'
+        f'<p>{html.escape(t("Everything downloaded, imported, organized, and ready to play."))}</p>'
+        '</div>',
         unsafe_allow_html=True,
     )
     refresh_col, path_col = st.columns([1, 3])
     refresh_clicked = refresh_col.button(
-        "Refresh library",
+        t("Refresh library"),
         type="primary",
         width="stretch",
     )
-    path_col.caption(f"Watching {root}")
+    path_col.caption(t("Watching {path}", path=root))
 
     scan_needed = (
         not library.database_path.exists()
@@ -340,40 +434,48 @@ def render_library_view() -> None:
     )
     try:
         if scan_needed or refresh_clicked:
-            with st.spinner("Scanning local media…"):
+            with st.spinner(t("Scanning local media…")):
                 summary = library.scan()
             st.session_state.library_scanned_root = str(root)
             if refresh_clicked or summary.added or summary.updated or summary.removed:
                 st.success(
-                    "Library refreshed — "
-                    f"{summary.added} added, {summary.updated} updated, "
-                    f"{summary.removed} removed."
+                    t(
+                        "Library refreshed — {added} added, {updated} updated, {removed} removed.",
+                        added=summary.added,
+                        updated=summary.updated,
+                        removed=summary.removed,
+                    )
                 )
         render_library_import(library)
         stats = library.stats()
     except (OSError, sqlite3.Error) as exc:
-        st.error(f"The library could not be opened: {exc}")
+        st.error(t("The library could not be opened: {error}", error=exc))
         return
 
     render_player(library)
 
     st.markdown(
         '<div class="sf-stats">'
-        f'<div class="sf-stat"><span>Items</span><strong>{stats.total}</strong></div>'
-        f'<div class="sf-stat"><span>Audio</span><strong>{stats.audio}</strong></div>'
-        f'<div class="sf-stat"><span>Video</span><strong>{stats.video}</strong></div>'
-        f'<div class="sf-stat"><span>Artists</span><strong>{stats.artists}</strong></div>'
-        f'<div class="sf-stat"><span>Storage</span>'
+        f'<div class="sf-stat"><span>{html.escape(t("Items"))}</span>'
+        f'<strong>{stats.total}</strong></div>'
+        f'<div class="sf-stat"><span>{html.escape(t("Audio"))}</span>'
+        f'<strong>{stats.audio}</strong></div>'
+        f'<div class="sf-stat"><span>{html.escape(t("Video"))}</span>'
+        f'<strong>{stats.video}</strong></div>'
+        f'<div class="sf-stat"><span>{html.escape(t("Artists"))}</span>'
+        f'<strong>{stats.artists}</strong></div>'
+        f'<div class="sf-stat"><span>{html.escape(t("Storage"))}</span>'
         f'<strong>{human_size(stats.size_bytes)}</strong></div>'
         '</div>',
         unsafe_allow_html=True,
     )
 
     section = st.segmented_control(
-        "Library section",
+        t("Library section"),
         ["Home", "Browse", "Discover", "Favorites", "Playlists", "History"],
         default="Home",
         selection_mode="single",
+        format_func=t,
         key="library_section",
     )
     if section == "Home":
@@ -405,13 +507,11 @@ def render_library_view() -> None:
 def render_library_home(library: MediaLibrary) -> None:
     recent = library.recently_added(limit=6)
     if not recent:
-        st.info(
-            "Your library is ready. Download something or import a media folder to begin."
-        )
+        st.info(t("Your library is ready. Download something or import a media folder to begin."))
         return
 
-    st.markdown("### Fresh in your library")
-    st.caption("The newest additions, ready for a first listen.")
+    st.markdown(f"### {t('Fresh in your library')}")
+    st.caption(t("The newest additions, ready for a first listen."))
     render_media_grid(
         library,
         recent,
@@ -421,8 +521,8 @@ def render_library_home(library: MediaLibrary) -> None:
 
     most_played = library.most_played(limit=6)
     if most_played:
-        st.markdown("### Back on repeat")
-        st.caption("Your most-played tracks and videos.")
+        st.markdown(f"### {t('Back on repeat')}")
+        st.caption(t("Your most-played tracks and videos."))
         render_media_grid(
             library,
             most_played,
@@ -439,16 +539,18 @@ def render_media_grid(
     key_prefix: str = "library",
 ) -> None:
     if not items:
-        st.info("No matching media found in this collection.")
+        st.info(t("No matching media found in this collection."))
         return
 
     playlists = library.playlists()
     favorite_paths = library.favorite_paths()
     shown = len(items)
     caption_col, play_col = st.columns([3, 1])
-    caption_col.caption(f"Showing {shown} of {total_matches} matching item(s).")
+    caption_col.caption(
+        t("Showing {shown} of {total} matching item(s).", shown=shown, total=total_matches)
+    )
     if play_col.button(
-        "▶ Play collection",
+        f"▶ {t('Play collection')}",
         key=f"play_collection_{key_prefix}_{active_playlist_id}_{shown}",
         width="stretch",
     ):
@@ -505,7 +607,7 @@ def render_library_item(
             st.caption("  ".join(annotations))
 
         play_col, favorite_col, more_col = st.columns([2, 1, 1])
-        if play_col.button("▶ Play", key=f"play_{item_key}", width="stretch"):
+        if play_col.button(f"▶ {t('Play')}", key=f"play_{item_key}", width="stretch"):
             select_media(library, item)
         favorite_label = "♥" if relative_path in favorite_paths else "♡"
         if favorite_col.button(
@@ -519,16 +621,16 @@ def render_library_item(
         with more_col.popover(
             "•••",
             key=f"more_{item_key}",
-            help="More actions",
+            help=t("More actions"),
             width="stretch",
         ):
             st.markdown(f"**{item.title}**")
             next_col, queue_col = st.columns(2)
-            if next_col.button("Play next", key=f"next_{item_key}", width="stretch"):
+            if next_col.button(t("Play next"), key=f"next_{item_key}", width="stretch"):
                 library.enqueue(item.path, play_next=True)
                 st.toast(f"{item.title} will play next.")
                 st.rerun()
-            if queue_col.button("Queue", key=f"queue_{item_key}", width="stretch"):
+            if queue_col.button(t("Queue"), key=f"queue_{item_key}", width="stretch"):
                 library.enqueue(item.path)
                 st.toast(f"Added {item.title} to the queue.")
                 st.rerun()
@@ -536,17 +638,17 @@ def render_library_item(
             if playlists:
                 playlist_names = {playlist.id: playlist.name for playlist in playlists}
                 playlist_id = st.selectbox(
-                    "Add to playlist",
+                    t("Add to playlist"),
                     list(playlist_names),
                     format_func=playlist_names.get,
                     key=f"playlist_select_{item_key}",
                 )
-                if st.button("Add", key=f"playlist_add_{item_key}", width="stretch"):
+                if st.button(t("Add"), key=f"playlist_add_{item_key}", width="stretch"):
                     library.add_to_playlist(playlist_id, item.path)
                     st.toast(f"Added {item.title} to {playlist_names[playlist_id]}.")
                     st.rerun()
             if active_playlist_id is not None and st.button(
-                "Remove from playlist",
+                t("Remove from playlist"),
                 key=f"playlist_remove_{active_playlist_id}_{item_key}",
                 width="stretch",
             ):
@@ -562,24 +664,24 @@ def render_library_item(
 
 
 def render_metadata_editor(library: MediaLibrary, item: MediaItem, item_key: str) -> None:
-    st.markdown("**Edit display metadata**")
-    st.caption("Saved locally; the media file stays unchanged.")
+    st.markdown(f"**{t('Edit display metadata')}**")
+    st.caption(t("Saved locally; the media file stays unchanged."))
     with st.form(f"metadata_{item_key}"):
         title = st.text_input("Title", value=item.title)
-        artist = st.text_input("Artist", value=item.artist)
-        album = st.text_input("Album", value=item.album)
+        artist = st.text_input(t("Artist"), value=item.artist)
+        album = st.text_input(t("Album"), value=item.album)
         rating = st.select_slider(
-            "Rating",
+            t("Rating"),
             options=[0, 1, 2, 3, 4, 5],
             value=item.rating,
-            format_func=lambda value: "Unrated" if value == 0 else "★" * value,
+            format_func=lambda value: t("Unrated") if value == 0 else "★" * value,
         )
         tags = st.text_input(
-            "Tags",
+            t("Tags"),
             value=", ".join(item.tags),
             placeholder="focus, live, workout",
         )
-        submitted = st.form_submit_button("Save metadata", width="stretch")
+        submitted = st.form_submit_button(t("Save metadata"), width="stretch")
     if submitted:
         try:
             library.update_metadata(
@@ -598,16 +700,16 @@ def render_metadata_editor(library: MediaLibrary, item: MediaItem, item_key: str
 
 
 def render_library_import(library: MediaLibrary) -> None:
-    with st.expander("Import a local media folder"):
+    with st.expander(t("Import a local media folder")):
         st.caption(
             "Supported audio and video files are copied into Imported/ while preserving folders."
         )
         source = st.text_input(
-            "Folder to import",
+            t("Folder to import"),
             placeholder="/Users/you/Music",
             key="library_import_source",
         )
-        if st.button("Import folder", key="library_import_button", width="stretch"):
+        if st.button(t("Import folder"), key="library_import_button", width="stretch"):
             try:
                 with st.spinner("Copying media into the library…"):
                     summary = library.import_folder(source)
@@ -623,7 +725,7 @@ def render_library_import(library: MediaLibrary) -> None:
 
 def render_discover(library: MediaLibrary) -> None:
     mode = st.selectbox(
-        "Explore your library",
+        t("Explore your library"),
         [
             "Recently added",
             "Most played",
@@ -633,6 +735,7 @@ def render_discover(library: MediaLibrary) -> None:
             "Albums",
             "Duplicates",
         ],
+        format_func=t,
         key="library_discover_mode",
     )
     search = st.session_state.library_search
@@ -729,7 +832,7 @@ def render_player(library: MediaLibrary) -> None:
     current = library.current_item()
     queue = library.queue()
     if current is None:
-        st.info("Choose an item to open the floating player.")
+        st.info(t("Choose an item to open the floating player."))
         if queue and st.button("Play first queued item", type="primary"):
             item = library.take_queue_entry()
             if item:
@@ -748,6 +851,8 @@ def render_player(library: MediaLibrary) -> None:
         repeat_mode=library.player_setting("repeat", "off"),
         crossfade_seconds=int(library.player_setting("crossfade", "0")),
         resume_position=library.playback_position(current.path),
+        visualizer_mode=library.player_setting("visualizer", "off"),
+        labels=dict(player_labels(st.session_state.get("ui_language"))),
     )
     result = render_continuous_player(player_data)
     handle_player_action(library, result, previous)
@@ -806,6 +911,13 @@ def handle_player_action(library: MediaLibrary, result, previous: MediaItem | No
         st.rerun()
     if action_type == "crossfade" and action.get("seconds") in {0, 2, 4, 6}:
         library.set_player_setting("crossfade", str(action["seconds"]))
+        st.rerun()
+    if action_type == "visualization" and action.get("mode") in {
+        "off",
+        "spectrum",
+        "waveform",
+    }:
+        library.set_player_setting("visualizer", action["mode"])
         st.rerun()
     if action_type == "position" and isinstance(action.get("position"), (int, float)):
         current = library.current_item()
@@ -928,10 +1040,11 @@ def filter_collection(
 def main() -> None:
     render_header()
     workspace = st.segmented_control(
-        "Workspace",
+        t("Workspace"),
         ["Download", "Library"],
         default="Library",
         selection_mode="single",
+        format_func=t,
         key="workspace",
     )
     if workspace == "Library":
@@ -944,21 +1057,52 @@ def analyze(raw_urls: str) -> None:
     try:
         urls = parse_urls(raw_urls)
         downloader = Downloader()
+        configured_limit = (
+            int(st.session_state.max_items) if st.session_state.get("use_limit") else 200
+        )
+        preview_limit = min(configured_limit, 500)
         with st.spinner("Reading source information…"):
-            st.session_state.previews = [downloader.inspect(url) for url in urls]
+            for url in urls:
+                st.session_state.pop(preview_selection_key(url), None)
+                st.session_state.pop(preview_editor_key(url), None)
+            st.session_state.previews = [
+                downloader.inspect(url, limit=preview_limit) for url in urls
+            ]
     except (ValidationError, DownloaderError) as exc:
         st.error(str(exc))
 
 
+def selected_download_urls(raw_urls: str) -> tuple[str, ...]:
+    urls = parse_urls(raw_urls)
+    previews = tuple(st.session_state.get("previews", ()))
+    selections: dict[str, tuple[str, ...]] = {}
+    for url in urls:
+        preview = next((item for item in previews if item.source_url == url), None)
+        selectable = tuple(
+            entry.webpage_url for entry in preview.entries if entry.webpage_url
+        ) if preview else ()
+        if selectable:
+            selections[url] = tuple(
+                st.session_state.get(preview_selection_key(url), selectable)
+            )
+    unique = resolve_selected_urls(urls, previews, selections)
+    if not unique:
+        raise ValidationError("Select at least one item from the analyzed collection.")
+    return unique
+
+
 def get_download_manager() -> DownloadJobManager:
     if "download_job_manager" not in st.session_state:
-        st.session_state.download_job_manager = DownloadJobManager(max_workers=2)
+        st.session_state.download_job_manager = DownloadJobManager(
+            max_workers=2,
+            state_path=default_job_state_path(),
+        )
     return st.session_state.download_job_manager
 
 
 def enqueue_download(raw_urls: str, manager: DownloadJobManager) -> None:
     try:
-        urls = parse_urls(raw_urls)
+        urls = selected_download_urls(raw_urls)
         request = build_request(urls)
     except ValidationError as exc:
         st.error(str(exc))
@@ -967,7 +1111,7 @@ def enqueue_download(raw_urls: str, manager: DownloadJobManager) -> None:
         st.error("FFmpeg was not found. Install FFmpeg and restart the app before downloading.")
         return
     job_ids = manager.submit(request)
-    st.success(f"Queued {len(job_ids)} background download job(s).")
+    st.success(t("Queued {count} background download job(s).", count=len(job_ids)))
 
 
 @st.fragment(run_every=1.0)
@@ -976,10 +1120,10 @@ def render_download_jobs(manager: DownloadJobManager) -> None:
     if not jobs:
         return
 
-    st.markdown(RESULT_LABEL_HTML, unsafe_allow_html=True)
+    st.markdown(section_label("Download activity"), unsafe_allow_html=True)
     heading_col, clear_col = st.columns([3, 1])
-    heading_col.caption("Downloads continue while you browse this app session.")
-    if clear_col.button("Clear finished", width="stretch", key="jobs_clear_finished"):
+    heading_col.caption(t("Downloads are saved locally and survive full app restarts."))
+    if clear_col.button(t("Clear finished"), width="stretch", key="jobs_clear_finished"):
         manager.remove_finished()
         st.rerun(scope="fragment")
 
@@ -1004,15 +1148,15 @@ def render_download_jobs(manager: DownloadJobManager) -> None:
 
             action_col, files_col = st.columns([1, 3])
             if job.status in {JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.PAUSING}:
-                if action_col.button("Pause", key=f"pause_{job.id}", width="stretch"):
+                if action_col.button(t("Pause"), key=f"pause_{job.id}", width="stretch"):
                     manager.pause(job.id)
                     st.rerun(scope="fragment")
             elif job.status is JobStatus.PAUSED:
-                if action_col.button("Resume", key=f"resume_{job.id}", width="stretch"):
+                if action_col.button(t("Resume"), key=f"resume_{job.id}", width="stretch"):
                     manager.resume(job.id)
                     st.rerun(scope="fragment")
             elif job.status is JobStatus.FAILED and action_col.button(
-                "Retry", key=f"retry_{job.id}", width="stretch"
+                t("Retry"), key=f"retry_{job.id}", width="stretch"
             ):
                 manager.retry(job.id)
                 st.rerun(scope="fragment")

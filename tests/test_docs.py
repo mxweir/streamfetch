@@ -32,3 +32,12 @@ def test_readme_showcase_assets_exist() -> None:
         "player-queue.png",
     ):
         assert (assets / name).is_file()
+
+    release_assets = assets / "releases" / "v1.1.0"
+    for name in (
+        "app-shell.png",
+        "collection-selection.png",
+        "player-visualizer.png",
+        "product-tour.gif",
+    ):
+        assert (release_assets / name).is_file()

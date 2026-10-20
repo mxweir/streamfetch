@@ -66,6 +66,8 @@ def test_build_player_data_preloads_next_queue_entry() -> None:
         repeat_mode="all",
         crossfade_seconds=4,
         resume_position=12.5,
+        visualizer_mode="spectrum",
+        labels={"shuffle": "MISCHEN"},
         media_manager=manager,
     )
 
@@ -79,6 +81,8 @@ def test_build_player_data_preloads_next_queue_entry() -> None:
     assert data["repeat_mode"] == "all"
     assert data["crossfade_seconds"] == 4
     assert data["resume_position"] == 12.5
+    assert data["visualizer_mode"] == "spectrum"
+    assert data["labels"]["shuffle"] == "MISCHEN"
     assert data["queue"] == [
         {"entry_id": 42, "title": "Next", "artist": "Open Audio"}
     ]
@@ -109,6 +113,9 @@ def test_player_is_a_floating_expandable_queue_controller() -> None:
     assert "data-expand" in PLAYER_HTML
     assert "data-shuffle" in PLAYER_HTML
     assert "data-clear" in PLAYER_HTML
+    assert "data-visualizer" in PLAYER_HTML
+    assert "createAnalyser" in PLAYER_JS
+    assert 'emit("visualization"' in PLAYER_JS
     assert 'emit("remove"' in PLAYER_JS
     assert 'emit("shuffle")' in PLAYER_JS
     assert 'emit("clear")' in PLAYER_JS

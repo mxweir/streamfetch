@@ -13,6 +13,8 @@ def test_theme_contains_premium_palette_and_surfaces():
 
 def test_hero_and_legal_copy_remain_accessible():
     assert "StreamFetch" in HERO_HTML
+    assert 'aria-label="StreamFetch"' in HERO_HTML
+    assert "sf-logo" in HERO_HTML
     assert "YouTube" in HERO_HTML
     assert "SoundCloud" in HERO_HTML
     assert "permission to download" in LEGAL_HTML

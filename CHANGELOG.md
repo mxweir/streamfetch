@@ -4,6 +4,29 @@ Every StreamFetch release is documented with the same visual format: a short
 summary, an authentic product image, user-visible changes, upgrade notes, and
 verification details. Full visual notes live in [`docs/releases`](docs/releases).
 
+## [1.1.0] — Roadmap complete
+
+_Released 2026-10-20 · [Full visual release notes](docs/releases/v1.1.0.md)_
+
+<p align="center">
+  <img src="docs/assets/releases/v1.1.0/product-tour.gif" width="680" alt="StreamFetch 1.1 product tour">
+</p>
+
+### Highlights
+
+- Persisted background jobs across complete app restarts, including safe recovery of interrupted work.
+- Added per-item selection for playlists, channels, SoundCloud sets, and profiles.
+- Added optional live waveform and spectrum modes to the floating player.
+- Added English/German localization, the new StreamFetch logo throughout the app, and a native desktop launcher.
+- Added a repeatable PyInstaller profile for platform-specific desktop bundles.
+
+### Quality
+
+- 51 automated tests with 82% measured coverage at release time.
+- CI verified on Python 3.11, 3.12, and 3.13.
+- Browser QA covered the real collection inspector, both visualizer modes, and live language switching.
+- No library migration required; existing local databases remain compatible.
+
 ## [1.0.0] — The local media workspace
 
 _Released 2026-10-20 · [Full visual release notes](docs/releases/v1.0.0.md)_
@@ -41,3 +64,4 @@ _Released 2026-10-20 · [Full visual release notes](docs/releases/v1.0.0.md)_
 | 0.1.0 | Initial YouTube downloader | [Notes](https://github.com/mxweir/streamlit-media-downloader/releases/tag/v0.1.0) |
 
 [1.0.0]: https://github.com/mxweir/streamlit-media-downloader/releases/tag/v1.0.0
+[1.1.0]: https://github.com/mxweir/streamlit-media-downloader/releases/tag/v1.1.0
