@@ -21,6 +21,7 @@ from streamfetch.config import (
 from streamfetch.downloader import Downloader, DownloaderError
 from streamfetch.library import MediaItem, MediaLibrary, Playlist
 from streamfetch.models import DownloadRequest, MediaType, ProgressEvent
+from streamfetch.player import build_player_data, render_continuous_player
 from streamfetch.theme import (
     APP_CSS,
     HERO_HTML,
@@ -34,16 +35,6 @@ from streamfetch.theme import (
 )
 
 st.set_page_config(page_title="StreamFetch", page_icon="⚡", layout="wide")
-
-AUDIO_MIME_TYPES = {
-    "FLAC": "audio/flac",
-    "M4A": "audio/mp4",
-    "MP3": "audio/mpeg",
-    "OGG": "audio/ogg",
-    "OPUS": "audio/ogg",
-    "WAV": "audio/wav",
-}
-
 
 def render_header() -> None:
     st.markdown(APP_CSS, unsafe_allow_html=True)
@@ -459,44 +450,19 @@ def render_player(library: MediaLibrary) -> None:
         with art_col:
             render_media_art(current)
         with player_col:
-            st.markdown('<div class="sf-player-kicker">Now playing</div>', unsafe_allow_html=True)
-            st.subheader(current.title)
-            st.caption(f"{current.artist} · {current.album}")
             autoplay = st.session_state.pop("player_autoplay", False)
-            if current.media_type == "audio":
-                st.audio(
-                    str(current.path),
-                    format=AUDIO_MIME_TYPES.get(current.format, "audio/mpeg"),
-                    autoplay=autoplay,
-                    alt=f"{current.title} by {current.artist}",
-                    width="stretch",
-                )
-            else:
-                st.video(str(current.path), autoplay=autoplay)
-
             previous = library.previous_item(current.path)
-            controls = st.columns(3)
-            if controls[0].button(
-                "← Previous",
-                disabled=previous is None,
-                width="stretch",
-                key="player_previous",
-            ) and previous:
-                select_media(library, previous)
-            if controls[1].button(
-                "Next →",
-                disabled=not queue,
-                width="stretch",
-                key="player_next",
-            ):
-                next_item = library.take_queue_entry()
-                if next_item:
-                    select_media(library, next_item)
             current_is_favorite = library.relative_path(current.path) in library.favorite_paths()
-            favorite_label = "♥ Saved" if current_is_favorite else "♡ Favorite"
-            if controls[2].button(favorite_label, width="stretch", key="player_favorite"):
-                library.toggle_favorite(current.path)
-                st.rerun()
+            player_data = build_player_data(
+                current,
+                queue[0] if queue else None,
+                favorite=current_is_favorite,
+                can_previous=previous is not None,
+                autoplay=autoplay,
+                queue_count=len(queue),
+            )
+            result = render_continuous_player(player_data)
+            handle_player_action(library, result, previous)
 
         with st.expander(f"Queue · {len(queue)} item(s)"):
             if not queue:
@@ -514,6 +480,31 @@ def render_player(library: MediaLibrary) -> None:
             if queue and st.button("Clear queue", key="queue_clear"):
                 library.clear_queue()
                 st.rerun()
+
+
+def handle_player_action(library: MediaLibrary, result, previous: MediaItem | None) -> None:
+    action = getattr(result, "action", None)
+    if not isinstance(action, dict):
+        return
+    nonce = action.get("nonce")
+    if not nonce or nonce == st.session_state.get("processed_player_action"):
+        return
+    st.session_state.processed_player_action = nonce
+
+    action_type = action.get("type")
+    if action_type == "favorite":
+        current = library.current_item()
+        if current:
+            library.toggle_favorite(current.path)
+        st.rerun()
+    if action_type == "previous" and previous:
+        select_media(library, previous)
+    if action_type == "advance":
+        entry_id = action.get("entry_id")
+        if isinstance(entry_id, int):
+            next_item = library.take_queue_entry(entry_id)
+            if next_item:
+                select_media(library, next_item)
 
 
 def render_playlists(library: MediaLibrary) -> None:
