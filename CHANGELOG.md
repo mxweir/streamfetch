@@ -23,7 +23,7 @@ _Released 2026-10-21 · [Full visual release notes](docs/releases/v1.3.0.md)_
 
 ### Quality
 
-- 82 automated tests passing with 78% total measured coverage.
+- 83 automated tests passing with 78% total measured coverage.
 - Automated tests cover identity matching, repeated checks, limits, retries, restart recovery, scheduling, playlist order, and backups.
 - Real YouTube and SoundCloud source inspections verified; screenshots show the actual application.
 - Windows interactive start testing remains a follow-up for the user.

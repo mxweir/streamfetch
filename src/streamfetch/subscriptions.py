@@ -246,7 +246,9 @@ class SubscriptionService:
     def check(self, source_id):
         source = self.store.source(source_id)
         preview = self.downloader_factory().inspect(source["url"], limit=source["scan_limit"])
-        entries = preview.entries or (PreviewEntry(preview.title, webpage_url=source["url"]),)
+        entries = preview.entries
+        if not entries and preview.source_type not in {"playlist", "multi_video"}:
+            entries = (PreviewEntry(preview.title, webpage_url=source["url"]),)
         library = MediaLibrary(Path(source["root"]))
         library.scan()
         existing = {}

@@ -252,3 +252,11 @@ def test_completed_media_is_shared_with_another_source_in_same_library(service):
     svc.check(second)
     assert svc.store.items(second)[0]["status"] == "downloaded"
     assert svc.store.items(second)[0]["files"] == svc.store.items(source_id)[0]["files"]
+
+
+def test_empty_collection_does_not_become_a_downloadable_channel_item(service):
+    svc, source_id = service
+    DemoDownloader.entries = ()
+    svc.check(source_id)
+    assert svc.store.items(source_id) == []
+    assert svc.jobs.snapshots() == ()
