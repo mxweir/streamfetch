@@ -33,11 +33,12 @@ def test_readme_showcase_assets_exist() -> None:
     ):
         assert (assets / name).is_file()
 
-    release_assets = assets / "releases" / "v1.1.0"
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    release_assets = assets / "releases" / f"v{project['project']['version']}"
     for name in (
-        "app-shell.png",
-        "collection-selection.png",
-        "player-visualizer.png",
+        "first-run-setup.png",
+        "download-presets.png",
+        "system-health.png",
         "product-tour.gif",
     ):
         assert (release_assets / name).is_file()

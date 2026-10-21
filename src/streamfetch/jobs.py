@@ -22,6 +22,8 @@ class JobStatus(StrEnum):
     RUNNING = "running"
     PAUSING = "pausing"
     PAUSED = "paused"
+    CANCELLING = "cancelling"
+    CANCELLED = "cancelled"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -56,6 +58,9 @@ class _DownloadJob:
     created_at: float = field(default_factory=time.time)
     pause_requested: threading.Event = field(default_factory=threading.Event)
     future: Future[Any] | None = None
+    cancel_requested: threading.Event = field(default_factory=threading.Event)
+    cleanup_partial: bool = False
+    attempt: int = 0
 
 
 class DownloadJobManager:
@@ -66,6 +71,7 @@ class DownloadJobManager:
         max_workers: int = 2,
         downloader_factory=Downloader,
         state_path: Path | None = None,
+        retry_delays: tuple[float, ...] = (1.0, 3.0),
     ):
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers,
@@ -76,6 +82,8 @@ class DownloadJobManager:
         self._lock = threading.RLock()
         self._state_path = Path(state_path).expanduser().resolve() if state_path else None
         self._last_persisted_at = 0.0
+        self._retry_delays = retry_delays
+        self._closed = False
         self._load()
 
     def submit(self, request: DownloadRequest) -> tuple[str, ...]:
@@ -108,6 +116,8 @@ class DownloadJobManager:
             job = self._jobs[job_id]
             if job.status not in {JobStatus.PAUSED, JobStatus.FAILED}:
                 return
+            if job.status is JobStatus.FAILED:
+                job.attempt = 0
             job.pause_requested.clear()
             job.status = JobStatus.QUEUED
             job.message = "Queued to resume"
@@ -117,6 +127,29 @@ class DownloadJobManager:
 
     def retry(self, job_id: str) -> None:
         self.resume(job_id)
+
+    def cancel(self, job_id: str, *, cleanup_partial: bool = False) -> None:
+        with self._lock:
+            job = self._jobs[job_id]
+            if job.status not in {
+                JobStatus.QUEUED,
+                JobStatus.RUNNING,
+                JobStatus.PAUSING,
+                JobStatus.PAUSED,
+                JobStatus.FAILED,
+            }:
+                return
+            job.cancel_requested.set()
+            job.cleanup_partial = cleanup_partial
+            if (job.future and job.future.cancel()) or job.status in {
+                JobStatus.PAUSED,
+                JobStatus.FAILED,
+            }:
+                self._cancelled(job)
+            else:
+                job.status = JobStatus.CANCELLING
+                job.message = "Cancelling safely…"
+            self._persist_locked()
 
     def snapshots(self) -> tuple[DownloadJobSnapshot, ...]:
         with self._lock:
@@ -128,7 +161,7 @@ class DownloadJobManager:
             removable = [
                 job_id
                 for job_id, job in self._jobs.items()
-                if job.status in {JobStatus.COMPLETED, JobStatus.FAILED}
+                if job.status in {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}
             ]
             for job_id in removable:
                 del self._jobs[job_id]
@@ -144,6 +177,7 @@ class DownloadJobManager:
 
     def shutdown(self) -> None:
         with self._lock:
+            self._closed = True
             self._persist_locked()
         self._executor.shutdown(wait=False, cancel_futures=True)
 
@@ -153,13 +187,19 @@ class DownloadJobManager:
             if job.pause_requested.is_set():
                 job.status = JobStatus.PAUSED
                 return
+            if job.cancel_requested.is_set():
+                self._cancelled(job)
+                return
             job.status = JobStatus.RUNNING
             job.message = "Preparing download…"
+            job.attempt += 1
             self._persist_locked()
 
         def on_progress(event: ProgressEvent) -> None:
             with self._lock:
                 active_job = self._jobs[job_id]
+                if active_job.cancel_requested.is_set():
+                    raise _CancelRequested
                 if active_job.pause_requested.is_set():
                     raise _PauseRequested
                 active_job.progress = event.progress or active_job.progress
@@ -173,10 +213,22 @@ class DownloadJobManager:
             result = self._downloader_factory().download(job.request, on_progress)
         except Exception as exc:
             with self._lock:
-                if job.pause_requested.is_set() or isinstance(exc, _PauseRequested):
+                if job.cancel_requested.is_set() or isinstance(exc, _CancelRequested):
+                    self._cancelled(job)
+                elif job.pause_requested.is_set() or isinstance(exc, _PauseRequested):
                     job.status = JobStatus.PAUSED
                     job.message = "Paused — resume to continue the partial download"
                     job.error = None
+                elif job.attempt <= len(self._retry_delays):
+                    delay = self._retry_delays[job.attempt - 1]
+                    job.status = JobStatus.QUEUED
+                    job.message = f"Retrying automatically in {delay:g}s"
+                    job.error = str(exc)
+                    self._persist_locked()
+                    timer = threading.Timer(delay, self._retry, args=(job.id,))
+                    timer.daemon = True
+                    timer.start()
+                    return
                 else:
                     job.status = JobStatus.FAILED
                     job.message = "Download failed"
@@ -195,6 +247,31 @@ class DownloadJobManager:
             job.error = None
             self._persist_locked()
 
+    def _retry(self, job_id: str) -> None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if (
+                self._closed
+                or job is None
+                or job.status is not JobStatus.QUEUED
+                or job.cancel_requested.is_set()
+            ):
+                return
+            job.future = self._executor.submit(self._run, job_id)
+
+    def _cancelled(self, job: _DownloadJob) -> None:
+        job.status = JobStatus.CANCELLED
+        job.message = "Cancelled"
+        job.error = None
+        if job.cleanup_partial:
+            removed = cleanup_partial_files(
+                job.request.output_dir,
+                filename=job.filename,
+                since=job.created_at,
+            )
+            job.message = f"Cancelled · removed {removed} partial file(s)"
+        self._persist_locked()
+
     def _load(self) -> None:
         if self._state_path is None or not self._state_path.exists():
             return
@@ -207,7 +284,12 @@ class DownloadJobManager:
                 job = _job_from_record(record)
             except (KeyError, TypeError, ValueError):
                 continue
-            if job.status in {JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.PAUSING}:
+            if job.status in {
+                JobStatus.QUEUED,
+                JobStatus.RUNNING,
+                JobStatus.PAUSING,
+                JobStatus.CANCELLING,
+            }:
                 job.status = JobStatus.PAUSED
                 job.message = "Recovered after restart — resume to continue"
                 job.error = None
@@ -250,6 +332,10 @@ class _PauseRequested(RuntimeError):
     pass
 
 
+class _CancelRequested(RuntimeError):
+    pass
+
+
 def default_job_state_path() -> Path:
     """Return the local state file used by the Streamlit and desktop apps."""
 
@@ -280,6 +366,7 @@ def _job_record(job: _DownloadJob) -> dict[str, Any]:
             "download_sections": list(request.download_sections),
             "split_chapters": request.split_chapters,
             "sponsorblock_remove": list(request.sponsorblock_remove),
+            "conflict_policy": request.conflict_policy,
         },
         "status": job.status.value,
         "progress": job.progress,
@@ -290,6 +377,7 @@ def _job_record(job: _DownloadJob) -> dict[str, Any]:
         "files": [str(path) for path in job.files],
         "error": job.error,
         "created_at": job.created_at,
+        "attempt": job.attempt,
     }
 
 
@@ -313,6 +401,7 @@ def _job_from_record(record: dict[str, Any]) -> _DownloadJob:
         download_sections=tuple(request_data.get("download_sections", ())),
         split_chapters=bool(request_data.get("split_chapters", False)),
         sponsorblock_remove=tuple(request_data.get("sponsorblock_remove", ())),
+        conflict_policy=str(request_data.get("conflict_policy", "resume")),
     )
     return _DownloadJob(
         id=str(record["id"]),
@@ -326,4 +415,41 @@ def _job_from_record(record: dict[str, Any]) -> _DownloadJob:
         files=tuple(Path(value) for value in record.get("files", ())),
         error=record.get("error"),
         created_at=float(record.get("created_at", time.time())),
+        attempt=int(record.get("attempt", 0)),
     )
+
+
+def cleanup_partial_files(
+    output_dir: Path,
+    *,
+    filename: str | None,
+    since: float = 0,
+) -> int:
+    """Remove only yt-dlp temporary files created for the selected job."""
+
+    root = Path(output_dir).expanduser()
+    if not root.exists() or not filename:
+        return 0
+    reported = Path(filename).expanduser()
+    candidates = {reported}
+    if not reported.name.endswith((".part", ".ytdl", ".temp")):
+        candidates.update(
+            reported.with_name(f"{reported.name}{suffix}")
+            for suffix in (".part", ".ytdl", ".temp")
+        )
+    removed = 0
+    resolved_root = root.resolve()
+    for path in candidates:
+        resolved = path.resolve()
+        if resolved_root not in resolved.parents or not resolved.name.endswith(
+            (".part", ".ytdl", ".temp")
+        ):
+            continue
+        if not resolved.is_file() or resolved.stat().st_mtime < since - 1:
+            continue
+        try:
+            resolved.unlink()
+        except OSError:
+            continue
+        removed += 1
+    return removed

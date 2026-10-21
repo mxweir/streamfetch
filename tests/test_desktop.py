@@ -1,4 +1,4 @@
-from streamfetch.desktop import find_free_port, find_streamlit_app
+from streamfetch.desktop import find_free_port, find_streamlit_app, streamlit_options
 
 
 def test_desktop_launcher_finds_checkout_app():
@@ -7,3 +7,11 @@ def test_desktop_launcher_finds_checkout_app():
 
 def test_desktop_launcher_allocates_local_port():
     assert 0 < find_free_port() < 65536
+
+
+def test_frozen_server_options_pin_loopback_and_port():
+    options = streamlit_options(8765)
+
+    assert options["global_developmentMode"] is False
+    assert options["server_address"] == "127.0.0.1"
+    assert options["server_port"] == 8765

@@ -109,6 +109,18 @@ def test_disable_playlist_and_unlimited_items():
     assert "playlistend" not in options
 
 
+def test_conflict_policy_controls_existing_files():
+    overwrite = build_ydl_options(make_request(conflict_policy="overwrite"))
+    assert overwrite["overwrites"] is True
+    assert "download_archive" not in overwrite
+    skip = build_ydl_options(make_request(conflict_policy="skip"))
+    assert skip["nooverwrites"] is True
+    assert skip["continuedl"] is False
+
+    with pytest.raises(ValidationError, match="conflict policy"):
+        build_ydl_options(make_request(conflict_policy="unknown"))
+
+
 def test_advanced_download_options_are_forwarded():
     request = make_request(
         concurrent_fragments=8,

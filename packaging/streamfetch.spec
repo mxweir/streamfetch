@@ -1,12 +1,20 @@
 # Build with: pyinstaller --clean packaging/streamfetch.spec
 
+import sys
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all
 
 
+ROOT = Path(SPECPATH).parent
+ICON = ROOT / (
+    "packaging/streamfetch.icns" if sys.platform == "darwin" else "packaging/streamfetch.ico"
+)
+
 datas = [
-    ("app.py", "."),
-    (".streamlit", ".streamlit"),
-    ("docs/assets/streamfetch-mark.svg", "docs/assets"),
+    (str(ROOT / "app.py"), "."),
+    (str(ROOT / ".streamlit"), ".streamlit"),
+    (str(ROOT / "docs/assets/streamfetch-mark.svg"), "docs/assets"),
 ]
 binaries = []
 hiddenimports = []
@@ -17,8 +25,8 @@ for package in ("streamlit", "yt_dlp", "mutagen", "webview"):
     hiddenimports += package_hidden
 
 a = Analysis(
-    ["src/streamfetch/desktop.py"],
-    pathex=["src"],
+    [str(ROOT / "src/streamfetch/desktop.py")],
+    pathex=[str(ROOT / "src")],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
@@ -33,5 +41,18 @@ exe = EXE(
     [],
     name="StreamFetch",
     console=False,
-    icon=None,
+    icon=str(ICON),
 )
+
+if sys.platform == "darwin":
+    app = BUNDLE(
+        exe,
+        name="StreamFetch.app",
+        icon=str(ICON),
+        bundle_identifier="com.mxweir.streamfetch",
+        info_plist={
+            "CFBundleDisplayName": "StreamFetch",
+            "CFBundleShortVersionString": "1.2.0",
+            "NSHighResolutionCapable": True,
+        },
+    )

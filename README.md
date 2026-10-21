@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/releases/v1.1.0/product-tour.gif" width="760" alt="StreamFetch 1.1 product tour showing the branded app shell, collection selection, and visualizer player">
+  <img src="docs/assets/releases/v1.2.0/product-tour.gif" width="760" alt="StreamFetch 1.2 product tour showing guided setup, download presets, and system health">
 </p>
 
 StreamFetch wraps [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) in a focused
@@ -47,20 +47,20 @@ local library, and play it without sending your collection to a cloud service.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/assets/releases/v1.1.0/app-shell.png" alt="StreamFetch 1.1 branded app shell"></td>
-    <td width="50%"><img src="docs/assets/releases/v1.1.0/collection-selection.png" alt="Per-item selection for a YouTube collection"></td>
+    <td width="50%"><img src="docs/assets/releases/v1.2.0/first-run-setup.png" alt="StreamFetch 1.2 guided first-run setup with dependency checks"></td>
+    <td width="50%"><img src="docs/assets/releases/v1.2.0/download-presets.png" alt="StreamFetch 1.2 download studio with the Music MP3 preset applied"></td>
   </tr>
   <tr>
-    <td align="center"><strong>One coherent app</strong><br><sub>New StreamFetch identity · local-first workspace · English and German</sub></td>
-    <td align="center"><strong>Choose before downloading</strong><br><sub>Inspect playlists, channels, sets, and profiles · select only the items you want</sub></td>
+    <td align="center"><strong>Ready on the first run</strong><br><sub>Choose a media folder · verify dependencies · get platform-specific help</sub></td>
+    <td align="center"><strong>Repeatable download recipes</strong><br><sub>MP3 · lossless audio · 1080p video · archive quality · custom</sub></td>
   </tr>
 </table>
 
 <p align="center">
-  <img src="docs/assets/releases/v1.1.0/player-visualizer.png" width="820" alt="Expanded StreamFetch player with live waveform and playback queue">
+  <img src="docs/assets/releases/v1.2.0/system-health.png" width="820" alt="StreamFetch 1.2 system health dashboard with all startup checks passing">
   <br>
-  <strong>Floating player, smart queue, and live visuals</strong><br>
-  <sub>Waveform or spectrum · continuous playback · drag to reorder · shuffle · repeat · crossfade · saved position</sub>
+  <strong>Dependencies, updates, and diagnostics in one place</strong><br>
+  <sub>Startup checks · safe update backups · release notifications · privacy-safe support bundles</sub>
 </p>
 
 ## What you get
@@ -71,7 +71,10 @@ local library, and play it without sending your collection to a cloud service.
 - SoundCloud tracks, sets, playlists, profiles, and share links
 - Video output as MP4, MKV, or WebM; audio as MP3, M4A, Opus, FLAC, or WAV
 - Resolution and audio-quality controls, metadata, thumbnails, and subtitles
-- Parallel background jobs with live progress, speed, ETA, pause, resume, and retry
+- Parallel background jobs with live progress, speed, ETA, pause, resume, cancel, and retry
+- Automatic retry with backoff, scoped partial-file cleanup, and free-space estimates
+- Presets for MP3, lossless audio, 1080p video, and archive quality
+- Explicit resume, skip, or overwrite handling when a destination already exists
 - Durable job state that survives closing and fully restarting the app
 - Per-item preview and selection before downloading playlists, channels, sets, or profiles
 - Collection safety limits, bandwidth limits, fragment concurrency, clip ranges,
@@ -100,22 +103,30 @@ local library, and play it without sending your collection to a cloud service.
 
 - English and German interface with an automatic system-language default
 - StreamFetch logo and identity throughout the browser and native desktop shell
-- Native desktop launcher powered by pywebview, plus a PyInstaller packaging profile
+- Guided first-run setup and startup checks for FFmpeg, yt-dlp, JavaScript, and storage
+- GitHub release notifications and optional backed-up, data-preserving updates
+- Privacy-safe diagnostics that omit URLs, cookies, filenames, and absolute media paths
+- Native desktop launcher plus automated macOS, Windows, and Linux release builds
 
 ## Quick start
 
-### 1. Install FFmpeg
+### 1. Install system tools
 
 ```bash
 # macOS
-brew install ffmpeg
+brew install ffmpeg node
 
 # Ubuntu / Debian
-sudo apt update && sudo apt install ffmpeg
+sudo apt update && sudo apt install ffmpeg nodejs
 
 # Windows
 winget install Gyan.FFmpeg
+winget install OpenJS.NodeJS.LTS
 ```
+
+StreamFetch verifies FFmpeg, yt-dlp, a supported JavaScript runtime, and the
+selected media folder during setup. If something is missing, it shows the exact
+installation command for the current operating system.
 
 ### 2. Install StreamFetch
 
@@ -136,7 +147,7 @@ streamlit run app.py
 
 Open `http://localhost:8501`, paste one permitted URL per line, choose the
 format, confirm permission, and start the download. Files are saved to
-`downloads/` by default and organized by uploader and collection.
+`~/Downloads/StreamFetch` by default and organized by uploader and collection.
 
 > [!TIP]
 > Keep `yt-dlp` current. Some YouTube formats can also require a JavaScript
@@ -158,8 +169,10 @@ pip install -e ".[package]"
 pyinstaller --clean packaging/streamfetch.spec
 ```
 
-The build is written to `dist/StreamFetch`. Desktop bundles are platform-specific,
-so build separately on macOS, Windows, or Linux for each target.
+The build is written to `dist/StreamFetch.app` on macOS and to the matching
+platform executable on Windows or Linux. Tagged GitHub releases automatically
+build a DMG, Windows EXE, and Linux archive. Signing and notarization run when
+the repository's optional signing secrets are configured.
 
 ## Docker
 
@@ -188,6 +201,26 @@ Download jobs are stored separately in `~/.streamfetch/download-jobs.json`.
 Completed and failed jobs return after a restart; interrupted jobs return paused
 and can be resumed deliberately.
 
+App preferences, update metadata, and pre-update backups live in
+`~/.streamfetch/`. Before any update is installed or staged, StreamFetch creates
+a ZIP containing settings, job state, and a consistent SQLite snapshot. Media
+files are never copied, replaced, or deleted by the updater. Source checkouts
+are only updated automatically when they are clean and currently on `main`.
+
+## Updates and diagnostics
+
+The optional startup check reads the latest public GitHub release and caches the
+result for six hours. Updates are handled according to the installation type:
+
+- Source checkout: fast-forward `main`, then refresh the desktop dependencies.
+- Python package: upgrade from the matching GitHub release tag.
+- Standalone desktop build: download the platform artifact and let the operating
+  system open it after StreamFetch has staged the backup.
+
+Automatic installation is off by default. Update checks can also be disabled.
+The diagnostics ZIP is designed for issue reports and intentionally excludes
+download URLs, browser cookies, media filenames, and absolute media paths.
+
 ## Development
 
 ```bash
@@ -211,12 +244,13 @@ bandwidth and storage. Do not expose it to the internet without authentication,
 quotas, isolation, and storage controls. Please report vulnerabilities through
 [SECURITY.md](SECURITY.md).
 
-## Version 1.1 roadmap: complete
+## Version 1.2: daily-driver release
 
-The complete 1.1 roadmap is now shipped: restart-safe background jobs,
-collection item selection, live audio visualizations, desktop packaging, and
-English/German localization. See the [visual 1.1 release notes](docs/releases/v1.1.0.md)
-for the implementation tour and verification details.
+Version 1.2 completes the daily-driver pass: guided setup, dependency health,
+safe cancellation and retries, presets, storage estimates, conflict handling,
+diagnostics, release notifications, data-preserving updates, and automated
+desktop builds. See the [visual 1.2 release notes](docs/releases/v1.2.0.md) for
+the implementation tour and verification details.
 
 ## Contributing
 

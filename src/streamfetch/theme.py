@@ -251,6 +251,8 @@ p, label, [data-testid="stMarkdownContainer"] { color: inherit; }
     font-weight: 800;
     letter-spacing: .1em;
     text-transform: uppercase;
+}
+
 [data-testid="stVerticalBlock"]:has(
     > [data-testid="stElementContainer"] .sf-card-marker
 ),
@@ -485,7 +487,7 @@ def hero_html(translate=lambda text: text) -> str:
 <header class="sf-appbar">
     <div class="sf-appbar__brand">
         <span class="sf-logo">{LOGO_SVG}</span>
-        <div><strong>StreamFetch</strong><br><small>Local media studio · 1.1</small></div>
+        <div><strong>StreamFetch</strong><br><small>Local media studio · 1.2</small></div>
     </div>
     <div class="sf-appbar__status">
         <span class="sf-status-dot"></span><small>{translate("Private on this device")}</small>
@@ -539,10 +541,21 @@ def library_sidebar_html(translate=lambda text: text) -> str:
 """
 
 
+def system_sidebar_html(translate=lambda text: text) -> str:
+    return f"""
+<div class="sf-sidebar-brand">
+    <div class="sf-sidebar-brand__top"><span class="sf-logo">{LOGO_SVG}</span>
+    <strong>{translate("System health.").replace(" ", "<br>", 1)}</strong></div>
+    <span>{translate("Dependencies · updates · diagnostics")}</span>
+</div>
+"""
+
+
 HERO_HTML = hero_html()
 LEGAL_HTML = legal_html()
 SIDEBAR_HEADER_HTML = sidebar_header_html()
 LIBRARY_SIDEBAR_HTML = library_sidebar_html()
+SYSTEM_SIDEBAR_HTML = system_sidebar_html()
 
 SOURCE_LABEL_HTML = '<div class="sf-section-label">New download</div>'
 PREVIEW_LABEL_HTML = '<div class="sf-section-label">Source preview</div>'

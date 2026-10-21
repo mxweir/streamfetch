@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "streamfetch"
-version = "1.1.0"
+version = "1.2.0"
 description = "A local Streamlit GUI for permitted YouTube and SoundCloud downloads"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -21,6 +21,7 @@ classifiers = [
 ]
 dependencies = [
   "mutagen>=1.47,<2",
+  "packaging>=24,<27",
   "streamlit>=1.66,<2",
   "yt-dlp[default]>=2026.8.19",
 ]

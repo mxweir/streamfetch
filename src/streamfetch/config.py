@@ -111,12 +111,13 @@ def build_ydl_options(
         "fragment_retries": 10,
         "concurrent_fragment_downloads": request.concurrent_fragments,
         "noplaylist": not request.allow_playlists,
-        "download_archive": str(output_dir / ".streamfetch-archive.txt"),
         "quiet": True,
         "no_warnings": True,
     }
     if request.max_items is not None:
         options["playlistend"] = request.max_items
+    if request.conflict_policy != "overwrite":
+        options["download_archive"] = str(output_dir / ".streamfetch-archive.txt")
     if progress_hook is not None:
         options["progress_hooks"] = [progress_hook]
     if request.cookie_browser:
@@ -127,6 +128,11 @@ def build_ydl_options(
         options["download_ranges"] = _download_ranges(request.download_sections)
     if request.sponsorblock_remove:
         options["sponsorblock_remove"] = set(request.sponsorblock_remove)
+    if request.conflict_policy == "overwrite":
+        options["overwrites"] = True
+    elif request.conflict_policy == "skip":
+        options["nooverwrites"] = True
+        options["continuedl"] = False
     postprocessors = [{"key": "FFmpegSplitChapters"}] if request.split_chapters else []
 
     if request.media_type is MediaType.AUDIO:
@@ -194,6 +200,8 @@ def validate_request(request: DownloadRequest) -> None:
         raise ValidationError("Concurrent fragments must be between 1 and 16.")
     if request.rate_limit is not None and request.rate_limit < 64 * 1024:
         raise ValidationError("The bandwidth limit must be at least 64 KB/s.")
+    if request.conflict_policy not in {"resume", "skip", "overwrite"}:
+        raise ValidationError("The conflict policy must be resume, skip, or overwrite.")
     for section in request.download_sections:
         try:
             start_text, end_text = section.split("-", maxsplit=1)

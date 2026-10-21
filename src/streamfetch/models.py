@@ -32,6 +32,7 @@ class DownloadRequest:
     download_sections: tuple[str, ...] = ()
     split_chapters: bool = False
     sponsorblock_remove: tuple[str, ...] = ()
+    conflict_policy: str = "resume"
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ class PreviewEntry:
     duration: int | None = None
     webpage_url: str | None = None
     identifier: str | None = None
+    size_bytes: int | None = None
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,8 @@ class SourcePreview:
     entry_count: int | None
     entries: tuple[PreviewEntry, ...] = ()
     thumbnail: str | None = None
+    duration: int | None = None
+    size_bytes: int | None = None
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
 
