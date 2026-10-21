@@ -22,7 +22,7 @@ from typing import Any
 
 from packaging.version import InvalidVersion, Version
 
-REPOSITORY = "mxweir/streamlit-media-downloader"
+REPOSITORY = "mxweir/streamfetch"
 LATEST_RELEASE_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 
 
