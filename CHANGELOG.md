@@ -4,7 +4,31 @@ Every StreamFetch release is documented with the same visual format: a short
 summary, an authentic product image, user-visible changes, upgrade notes, and
 verification details. Full visual notes live in [`docs/releases`](docs/releases).
 
-## Unreleased
+## [1.3.0] — Subscriptions & Smart Sync
+
+_Released 2026-10-21 · [Full visual release notes](docs/releases/v1.3.0.md)_
+
+<p align="center">
+  <img src="docs/assets/releases/v1.3.0/product-tour.gif" width="680" alt="StreamFetch 1.3 subscriptions and smart sync tour">
+</p>
+
+### Highlights
+
+- Save YouTube and SoundCloud sources with independent presets, media folders, and limits.
+- Discover new arrivals, select the next batch, and track checks and results in persistent sync history.
+- Maintain local playlists in source order and retain previous downloads outside the inspection window.
+- Enable startup or interval checks while the app is running; downloads remain an explicit action.
+- Recover completed jobs after restarts and include subscription data and source libraries in update backups.
+- Share download workers across sessions and include dynamically loaded application modules in desktop packages.
+
+### Quality
+
+- 82 automated tests passing with 78% total measured coverage.
+- Automated tests cover identity matching, repeated checks, limits, retries, restart recovery, scheduling, playlist order, and backups.
+- Real YouTube and SoundCloud source inspections verified; screenshots show the actual application.
+- Windows interactive start testing remains a follow-up for the user.
+
+### Repository
 
 - Renamed the GitHub repository to `mxweir/streamfetch` and aligned the description,
   topics, package metadata, documentation links, and updater with the StreamFetch brand.
@@ -95,3 +119,4 @@ _Released 2026-10-20 · [Full visual release notes](docs/releases/v1.0.0.md)_
 [1.0.0]: https://github.com/mxweir/streamfetch/releases/tag/v1.0.0
 [1.1.0]: https://github.com/mxweir/streamfetch/releases/tag/v1.1.0
 [1.2.0]: https://github.com/mxweir/streamfetch/releases/tag/v1.2.0
+[1.3.0]: https://github.com/mxweir/streamfetch/releases/tag/v1.3.0

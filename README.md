@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/releases/v1.2.0/product-tour.gif" width="760" alt="StreamFetch 1.2 product tour showing guided setup, download presets, and system health">
+  <img src="docs/assets/releases/v1.3.0/product-tour.gif" width="760" alt="StreamFetch 1.3 product tour showing subscriptions, new arrivals, source settings, and sync history">
 </p>
 
 StreamFetch wraps [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) in a focused
@@ -47,23 +47,37 @@ local library, and play it without sending your collection to a cloud service.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/assets/releases/v1.2.0/first-run-setup.png" alt="StreamFetch 1.2 guided first-run setup with dependency checks"></td>
-    <td width="50%"><img src="docs/assets/releases/v1.2.0/download-presets.png" alt="StreamFetch 1.2 download studio with the Music MP3 preset applied"></td>
+    <td width="50%"><img src="docs/assets/releases/v1.3.0/new-arrivals.png" alt="StreamFetch new arrivals with selective synchronization"></td>
+    <td width="50%"><img src="docs/assets/releases/v1.3.0/source-settings.png" alt="Per-source download presets, limits, and check intervals"></td>
   </tr>
   <tr>
-    <td align="center"><strong>Ready on the first run</strong><br><sub>Choose a media folder · verify dependencies · get platform-specific help</sub></td>
-    <td align="center"><strong>Repeatable download recipes</strong><br><sub>MP3 · lossless audio · 1080p video · archive quality · custom</sub></td>
+    <td align="center"><strong>Follow your favorite sources</strong><br><sub>Discover new arrivals · choose what to sync · keep a local playlist</sub></td>
+    <td align="center"><strong>Each source, your settings</strong><br><sub>Format presets · batch limits · startup checks · optional schedules</sub></td>
   </tr>
 </table>
 
 <p align="center">
-  <img src="docs/assets/releases/v1.2.0/system-health.png" width="820" alt="StreamFetch 1.2 system health dashboard with all startup checks passing">
+  <img src="docs/assets/releases/v1.3.0/sync-history.png" width="820" alt="Persistent source check history showing five initial discoveries and no duplicates on the next check">
   <br>
-  <strong>Dependencies, updates, and diagnostics in one place</strong><br>
-  <sub>Startup checks · safe update backups · release notifications · privacy-safe support bundles</sub>
+  <strong>Know what changed since your last visit</strong><br>
+  <sub>Persistent checks · new-item counts · download results · retryable failures</sub>
 </p>
 
 ## What you get
+
+### Subscriptions & Smart Sync
+
+- Save YouTube channels and playlists or SoundCloud profiles, sets, and playlists
+- Set a format preset, media folder, download batch limit, and inspection limit per source
+- Preview new items and select what to download; completed items stay out of the next batch
+- Recognize existing library items by their source URL and reuse completed subscription media
+- Maintain a dedicated local playlist that follows the latest inspected source order
+- Check manually, at startup, or at an optional interval while StreamFetch is running
+- Keep per-source check history and retryable download results across restarts
+
+Checks only discover new items. Downloads start after you select and confirm
+them. Each check inspects up to 500 source entries in the platform's returned
+order; older local items outside that window are retained.
 
 ### Download studio
 
@@ -207,6 +221,12 @@ a ZIP containing settings, job state, and a consistent SQLite snapshot. Media
 files are never copied, replaced, or deleted by the updater. Source checkouts
 are only updated automatically when they are clean and currently on `main`.
 
+Subscriptions and sync history live in `~/.streamfetch/subscriptions.db`.
+Subscription downloads are stored inside each source's selected media folder
+under `Subscriptions/`. Open that folder in Library to play or organize them.
+Removing a source keeps its files and local playlist. Update backups include
+the subscriptions database and the library index for every source folder.
+
 ## Updates and diagnostics
 
 The optional startup check reads the latest public GitHub release and caches the
@@ -244,13 +264,13 @@ bandwidth and storage. Do not expose it to the internet without authentication,
 quotas, isolation, and storage controls. Please report vulnerabilities through
 [SECURITY.md](SECURITY.md).
 
-## Version 1.2: daily-driver release
+## Version 1.3: subscriptions and smart sync
 
-Version 1.2 completes the daily-driver pass: guided setup, dependency health,
-safe cancellation and retries, presets, storage estimates, conflict handling,
-diagnostics, release notifications, data-preserving updates, and automated
-desktop builds. See the [visual 1.2 release notes](docs/releases/v1.2.0.md) for
-the implementation tour and verification details.
+Version 1.3 gives your sources a permanent home: saved subscriptions,
+new-arrival previews, configurable checks, selective synchronization, persistent
+history, and source-ordered local playlists. See the
+[visual 1.3 release notes](docs/releases/v1.3.0.md) for the implementation tour
+and verification details.
 
 ## Contributing
 
