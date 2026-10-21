@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mxweir/streamlit-media-downloader/actions/workflows/ci.yml"><img src="https://github.com/mxweir/streamlit-media-downloader/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/mxweir/streamlit-media-downloader/releases/latest"><img src="https://img.shields.io/github/v/release/mxweir/streamlit-media-downloader?display_name=tag&sort=semver&color=8b7cff" alt="Latest release"></a>
+  <a href="https://github.com/mxweir/streamfetch/actions/workflows/ci.yml"><img src="https://github.com/mxweir/streamfetch/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/mxweir/streamfetch/releases/latest"><img src="https://img.shields.io/github/v/release/mxweir/streamfetch?display_name=tag&sort=semver&color=8b7cff" alt="Latest release"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-ffcf4a.svg" alt="MIT license"></a>
 </p>
@@ -131,8 +131,8 @@ installation command for the current operating system.
 ### 2. Install StreamFetch
 
 ```bash
-git clone https://github.com/mxweir/streamlit-media-downloader.git
-cd streamlit-media-downloader
+git clone https://github.com/mxweir/streamfetch.git
+cd streamfetch
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 python -m pip install --upgrade pip
@@ -256,7 +256,7 @@ the implementation tour and verification details.
 
 Issues and focused pull requests are welcome. Start with
 [CONTRIBUTING.md](CONTRIBUTING.md), check the
-[open issues](https://github.com/mxweir/streamlit-media-downloader/issues), and
+[open issues](https://github.com/mxweir/streamfetch/issues), and
 keep examples free of private media, browser data, credentials, and personal
 paths.
 

@@ -5,12 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "streamfetch"
 version = "1.2.0"
-description = "A local Streamlit GUI for permitted YouTube and SoundCloud downloads"
+description = "Local-first media downloader, library and player for YouTube and SoundCloud"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "mxweir" }]
-keywords = ["streamlit", "yt-dlp", "youtube", "soundcloud", "downloader", "gui"]
+keywords = ["streamfetch", "streamlit", "yt-dlp", "youtube", "soundcloud", "downloader", "media-library", "music-player", "local-first"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "License :: OSI Approved :: MIT License",
@@ -44,8 +44,8 @@ package = [
 streamfetch-desktop = "streamfetch.desktop:main"
 
 [project.urls]
-Homepage = "https://github.com/mxweir/streamlit-media-downloader"
-Issues = "https://github.com/mxweir/streamlit-media-downloader/issues"
+Homepage = "https://github.com/mxweir/streamfetch"
+Issues = "https://github.com/mxweir/streamfetch/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/streamfetch"]
