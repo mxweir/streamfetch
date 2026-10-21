@@ -1,0 +1,86 @@
+name: Desktop release builds
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+          - name: Windows
+            os: windows-latest
+          - name: Linux
+            os: ubuntu-latest
+    env:
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      WINDOWS_PFX: ${{ secrets.WINDOWS_PFX }}
+      WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install build dependencies
+        run: pip install -e ".[package]"
+      - name: Build desktop application
+        run: pyinstaller --clean packaging/streamfetch.spec
+
+      - name: Sign macOS application when credentials are configured
+        if: runner.os == 'macOS' && env.MACOS_CERTIFICATE != ''
+        shell: bash
+        run: |
+          printf '%s' "$MACOS_CERTIFICATE" | base64 -D > certificate.p12
+          security create-keychain -p streamfetch build.keychain
+          security import certificate.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security list-keychains -d user -s build.keychain
+          security unlock-keychain -p streamfetch build.keychain
+          codesign --deep --force --options runtime --sign "$MACOS_SIGNING_IDENTITY" dist/StreamFetch.app
+      - name: Package macOS disk image
+        if: runner.os == 'macOS'
+        run: hdiutil create -volname StreamFetch -srcfolder dist/StreamFetch.app -ov -format UDZO StreamFetch-macos.dmg
+      - name: Notarize macOS disk image when credentials are configured
+        if: runner.os == 'macOS' && env.APPLE_ID != ''
+        run: xcrun notarytool submit StreamFetch-macos.dmg --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+
+      - name: Prepare Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Copy-Item dist/StreamFetch.exe StreamFetch-windows.exe
+      - name: Sign Windows executable when credentials are configured
+        if: runner.os == 'Windows' && env.WINDOWS_PFX != ''
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("certificate.pfx", [Convert]::FromBase64String($env:WINDOWS_PFX))
+          signtool sign /fd SHA256 /f certificate.pfx /p $env:WINDOWS_PFX_PASSWORD /tr http://timestamp.digicert.com /td SHA256 StreamFetch-windows.exe
+
+      - name: Package Linux executable
+        if: runner.os == 'Linux'
+        run: tar -C dist -czf StreamFetch-linux.tar.gz StreamFetch
+      - uses: actions/upload-artifact@v6
+        with:
+          name: StreamFetch-${{ matrix.name }}
+          path: StreamFetch-*
+          if-no-files-found: error
+      - name: Attach build to GitHub release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh release upload "${{ github.event.release.tag_name }}" StreamFetch-* --clobber

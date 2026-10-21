@@ -113,3 +113,70 @@ def test_interrupted_job_is_recovered_as_paused(tmp_path):
     assert snapshot.status is JobStatus.PAUSED
     assert "restart" in snapshot.message.lower() or "paused" in snapshot.message.lower()
     restored.shutdown()
+
+
+class CancellableDownloader:
+    started = threading.Event()
+    finish = threading.Event()
+
+    def download(self, download_request, callback):
+        partial = download_request.output_dir / "track.mp3.part"
+        partial.write_bytes(b"partial")
+        callback(ProgressEvent("downloading", "Downloading", 0.2, str(partial)))
+        type(self).started.set()
+        type(self).finish.wait(timeout=5)
+        callback(ProgressEvent("downloading", "Downloading", 0.3, str(partial)))
+        return DownloadResult(download_request.output_dir, (), 1.0, 2.0)
+
+
+def test_running_job_can_cancel_and_remove_only_its_partial_file(tmp_path):
+    CancellableDownloader.started.clear()
+    CancellableDownloader.finish.clear()
+    unrelated = tmp_path / "unrelated.part"
+    unrelated.write_bytes(b"keep")
+    manager = DownloadJobManager(
+        max_workers=1,
+        downloader_factory=CancellableDownloader,
+        retry_delays=(),
+    )
+    job_id = manager.submit(replace(request(tmp_path), urls=("https://youtu.be/one",)))[0]
+    assert CancellableDownloader.started.wait(timeout=5)
+
+    manager.cancel(job_id, cleanup_partial=True)
+    CancellableDownloader.finish.set()
+    snapshot = manager.wait(job_id)
+
+    assert snapshot.status is JobStatus.CANCELLED
+    assert not (tmp_path / "track.mp3.part").exists()
+    assert unrelated.exists()
+    manager.shutdown()
+
+
+class FlakyDownloader:
+    calls = 0
+    completed = threading.Event()
+
+    def download(self, download_request, callback):
+        type(self).calls += 1
+        if type(self).calls == 1:
+            raise RuntimeError("temporary network error")
+        type(self).completed.set()
+        return DownloadResult(download_request.output_dir, (), 1.0, 2.0)
+
+
+def test_failed_job_retries_automatically_with_backoff(tmp_path):
+    FlakyDownloader.calls = 0
+    FlakyDownloader.completed.clear()
+    manager = DownloadJobManager(
+        max_workers=1,
+        downloader_factory=FlakyDownloader,
+        retry_delays=(0,),
+    )
+    job_id = manager.submit(replace(request(tmp_path), urls=("https://youtu.be/one",)))[0]
+
+    assert FlakyDownloader.completed.wait(timeout=5)
+    snapshot = manager.wait(job_id)
+
+    assert snapshot.status is JobStatus.COMPLETED
+    assert FlakyDownloader.calls == 2
+    manager.shutdown()

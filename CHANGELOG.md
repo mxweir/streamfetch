@@ -4,6 +4,30 @@ Every StreamFetch release is documented with the same visual format: a short
 summary, an authentic product image, user-visible changes, upgrade notes, and
 verification details. Full visual notes live in [`docs/releases`](docs/releases).
 
+## [1.2.0] — Daily driver
+
+_Released 2026-10-21 · [Full visual release notes](docs/releases/v1.2.0.md)_
+
+<p align="center">
+  <img src="docs/assets/releases/v1.2.0/product-tour.gif" width="680" alt="StreamFetch 1.2 product tour">
+</p>
+
+### Highlights
+
+- Added a guided first-run flow with local dependency and storage checks plus platform-specific installation help.
+- Added GitHub release notifications, optional automatic updates, and a pre-update backup that preserves settings, jobs, and a consistent library snapshot.
+- Added cancel controls, scoped partial-file cleanup, automatic retries with backoff, storage estimates, conflict policies, and reusable download presets.
+- Added privacy-safe diagnostics and automated macOS, Windows, and Linux desktop release builds.
+- Extended the German interface across the new setup, system, update, and job workflows.
+
+### Quality
+
+- 69 automated tests with 82% measured coverage at release time.
+- CI verified on Python 3.11, 3.12, and 3.13.
+- A native macOS `.app` was built and passed strict code-signing verification.
+- Browser QA covered setup, presets, system health, safe update refusal, and the 390 px mobile breakpoint.
+- No media migration required; mutable data stays outside the application and is backed up before updating.
+
 ## [1.1.0] — Roadmap complete
 
 _Released 2026-10-20 · [Full visual release notes](docs/releases/v1.1.0.md)_
@@ -65,3 +89,4 @@ _Released 2026-10-20 · [Full visual release notes](docs/releases/v1.0.0.md)_
 
 [1.0.0]: https://github.com/mxweir/streamlit-media-downloader/releases/tag/v1.0.0
 [1.1.0]: https://github.com/mxweir/streamlit-media-downloader/releases/tag/v1.1.0
+[1.2.0]: https://github.com/mxweir/streamlit-media-downloader/releases/tag/v1.2.0

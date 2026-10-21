@@ -6,11 +6,13 @@ import hashlib
 import html
 import shutil
 import sqlite3
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
 
+from streamfetch import __version__
 from streamfetch.config import (
     ValidationError,
     human_size,
@@ -18,18 +20,32 @@ from streamfetch.config import (
     parse_urls,
     validate_request,
 )
-from streamfetch.downloader import Downloader, DownloaderError, resolve_selected_urls
+from streamfetch.downloader import (
+    Downloader,
+    DownloaderError,
+    estimate_download_bytes,
+    resolve_selected_urls,
+)
 from streamfetch.i18n import LANGUAGES, default_language, player_labels, translate
 from streamfetch.jobs import DownloadJobManager, JobStatus, default_job_state_path
 from streamfetch.library import MediaItem, MediaLibrary, Playlist
 from streamfetch.models import DownloadRequest, MediaType
 from streamfetch.player import build_player_data, render_continuous_player
+from streamfetch.settings import AppSettings, default_state_dir, load_settings, save_settings
+from streamfetch.system import HealthStatus, diagnostics_archive, run_health_checks
 from streamfetch.theme import (
     APP_CSS,
     hero_html,
     legal_html,
     library_sidebar_html,
     sidebar_header_html,
+    system_sidebar_html,
+)
+from streamfetch.updates import (
+    ReleaseInfo,
+    apply_update,
+    cached_update_check,
+    launch_downloaded_update,
 )
 
 _source_favicon = Path(__file__).resolve().parent / "docs" / "assets" / "streamfetch-mark.svg"
@@ -40,8 +56,13 @@ _favicon = next(
 )
 st.set_page_config(page_title="StreamFetch", page_icon=_favicon, layout="wide")
 
+if "app_settings" not in st.session_state:
+    stored_settings = load_settings()
+    if not stored_settings.first_run_completed and stored_settings.language == "English":
+        stored_settings = replace(stored_settings, language=default_language())
+    st.session_state.app_settings = stored_settings
 if "ui_language" not in st.session_state:
-    st.session_state.ui_language = default_language()
+    st.session_state.ui_language = st.session_state.app_settings.language
 
 
 def t(text: str, **values: object) -> str:
@@ -53,7 +74,14 @@ def render_language_picker() -> None:
         t("Language"),
         list(LANGUAGES),
         key="ui_language",
+        on_change=persist_language,
     )
+
+
+def persist_language() -> None:
+    settings = replace(st.session_state.app_settings, language=st.session_state.ui_language)
+    save_settings(settings)
+    st.session_state.app_settings = settings
 
 
 def section_label(text: str) -> str:
@@ -63,6 +91,158 @@ def render_header() -> None:
     st.markdown(APP_CSS, unsafe_allow_html=True)
     st.markdown(hero_html(t), unsafe_allow_html=True)
     st.markdown(legal_html(t), unsafe_allow_html=True)
+
+
+def current_health_checks(*, force: bool = False):
+    if force or "health_checks" not in st.session_state:
+        output = Path(
+            st.session_state.get("output_dir", st.session_state.app_settings.media_dir)
+        )
+        st.session_state.health_checks = run_health_checks(output)
+    return st.session_state.health_checks
+
+
+def check_for_updates(*, force: bool = False) -> ReleaseInfo | None:
+    settings = st.session_state.app_settings
+    if not settings.check_updates and not force:
+        return None
+    try:
+        release = cached_update_check(
+            __version__,
+            default_state_dir(),
+            force=force,
+        )
+    except RuntimeError as exc:
+        st.session_state.update_error = str(exc)
+        return None
+    st.session_state.latest_release = release
+    st.session_state.pop("update_error", None)
+    return release
+
+
+def initialize_startup_services() -> None:
+    current_health_checks()
+    settings = st.session_state.app_settings
+    if "update_checked" not in st.session_state and settings.check_updates:
+        st.session_state.update_checked = True
+        release = check_for_updates()
+        if (
+            release
+            and settings.auto_update
+            and "automatic_update_attempted" not in st.session_state
+        ):
+            st.session_state.automatic_update_attempted = True
+            st.session_state.update_result = apply_update(
+                release,
+                state_dir=default_state_dir(),
+                library_root=settings.media_dir,
+                project_root=Path(__file__).resolve().parent,
+            )
+
+
+def open_system_workspace() -> None:
+    st.session_state.workspace = "System"
+
+
+def render_startup_notices() -> None:
+    missing = [
+        check
+        for check in current_health_checks()
+        if check.required and check.status == HealthStatus.MISSING
+    ]
+    if missing:
+        notice_col, action_col = st.columns([4, 1])
+        notice_col.warning(
+            t(
+                "Setup needs attention: {names}. Open System for the exact installation steps.",
+                names=", ".join(check.name for check in missing),
+            )
+        )
+        action_col.button(
+            t("Open System"),
+            on_click=open_system_workspace,
+            width="stretch",
+            key="open_system_health",
+        )
+    release = st.session_state.get("latest_release")
+    if release:
+        update_col, action_col = st.columns([4, 1])
+        update_col.info(
+            t(
+                "StreamFetch {version} is available. Your library and settings are "
+                "backed up before installation.",
+                version=release.version,
+            )
+        )
+        action_col.button(
+            t("View update"),
+            on_click=open_system_workspace,
+            width="stretch",
+            key="open_system_update",
+        )
+
+
+@st.dialog("Welcome to StreamFetch", width="large")
+def render_first_run_dialog() -> None:
+    st.markdown(f"## {t('Let’s get your media workspace ready')}")
+    st.caption(
+        t(
+            "StreamFetch checks its local tools first and shows platform-specific help "
+            "for anything missing."
+        )
+    )
+    language = st.selectbox(
+        t("Language"),
+        list(LANGUAGES),
+        index=list(LANGUAGES).index(st.session_state.ui_language),
+        key="setup_language",
+    )
+    suggested_media_dir = (
+        st.session_state.app_settings.download_dir or "~/Downloads/StreamFetch"
+    )
+    media_dir = st.text_input(
+        t("Media folder"),
+        value=suggested_media_dir,
+        key="setup_media_dir",
+    )
+    checks = run_health_checks(Path(media_dir))
+    st.markdown(f"### {t('System check')}")
+    for check in checks:
+        icon = (
+            "✅"
+            if check.status == HealthStatus.READY
+            else "⚠️"
+            if check.status == HealthStatus.WARNING
+            else "❌"
+        )
+        st.markdown(f"{icon} **{t(check.name)}** — {t(check.detail)}")
+        if check.guidance and check.status != HealthStatus.READY:
+            st.code(t(check.guidance), language=None)
+    check_updates = st.checkbox(
+        t("Automatically check GitHub for StreamFetch updates"),
+        value=True,
+        key="setup_check_updates",
+    )
+    if st.button(t("Finish setup"), type="primary", width="stretch"):
+        try:
+            Path(media_dir).expanduser().mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            st.error(t("The media folder could not be created: {error}", error=exc))
+            return
+        settings = AppSettings(
+            first_run_completed=True,
+            language=language,
+            download_dir=media_dir,
+            check_updates=check_updates,
+            auto_update=False,
+        )
+        save_settings(settings)
+        st.session_state.app_settings = settings
+        st.session_state.ui_language = language
+        st.session_state.output_dir = media_dir
+        st.session_state.library_dir = media_dir
+        st.session_state.health_checks = checks
+        st.rerun()
 
 
 def preview_selection_key(source_url: str) -> str:
@@ -149,7 +329,7 @@ def format_duration(seconds: int | None) -> str:
 
 
 def default_download_dir() -> str:
-    return str((Path.cwd() / "downloads").resolve())
+    return str(st.session_state.app_settings.media_dir)
 
 
 def build_request(urls: tuple[str, ...]) -> DownloadRequest:
@@ -204,15 +384,65 @@ def build_request(urls: tuple[str, ...]) -> DownloadRequest:
         ),
         split_chapters=st.session_state.split_chapters,
         sponsorblock_remove=tuple(st.session_state.sponsorblock_remove),
+        conflict_policy=st.session_state.conflict_policy,
     )
     validate_request(request)
     return request
+
+
+DOWNLOAD_PRESETS = {
+    "Music MP3": {
+        "media_type": "audio",
+        "audio_format": "mp3",
+        "audio_quality": "192K",
+        "embed_metadata": True,
+        "embed_thumbnail": True,
+    },
+    "Lossless audio": {
+        "media_type": "audio",
+        "audio_format": "flac",
+        "audio_quality": "0",
+        "embed_metadata": True,
+        "embed_thumbnail": True,
+    },
+    "Video 1080p": {
+        "media_type": "video",
+        "video_format": "mp4",
+        "video_quality": "1080p",
+        "embed_metadata": True,
+        "embed_thumbnail": True,
+    },
+    "Archive quality": {
+        "media_type": "video",
+        "video_format": "mkv",
+        "video_quality": "best",
+        "embed_metadata": True,
+        "embed_thumbnail": True,
+        "embed_subtitles": True,
+    },
+}
+
+
+def apply_download_preset() -> None:
+    preset = st.session_state.get("download_preset")
+    for key, value in DOWNLOAD_PRESETS.get(preset, {}).items():
+        st.session_state[key] = value
 
 
 def render_download_sidebar() -> None:
     with st.sidebar:
         st.markdown(sidebar_header_html(t), unsafe_allow_html=True)
         render_language_picker()
+        preset_col, apply_col = st.columns([2, 1])
+        preset_col.selectbox(
+            t("Preset"),
+            ["Custom", *DOWNLOAD_PRESETS],
+            format_func=t,
+            key="download_preset",
+        )
+        if apply_col.button(t("Apply"), key="apply_download_preset", width="stretch"):
+            apply_download_preset()
+            st.rerun()
         st.radio(
             t("Media type"),
             ["video", "audio"],
@@ -276,6 +506,12 @@ def render_download_sidebar() -> None:
         )
 
         with st.expander(t("Advanced")):
+            st.selectbox(
+                t("If a file already exists"),
+                ["resume", "skip", "overwrite"],
+                format_func=t,
+                key="conflict_policy",
+            )
             st.selectbox(
                 t("Use cookies from browser"),
                 ["None", "Chrome", "Firefox", "Edge", "Safari", "Brave"],
@@ -353,6 +589,164 @@ def render_library_sidebar() -> None:
         )
 
 
+def render_system_sidebar() -> None:
+    with st.sidebar:
+        st.markdown(system_sidebar_html(t), unsafe_allow_html=True)
+        render_language_picker()
+        st.caption(t("StreamFetch {version}", version=__version__))
+        st.caption(t("All checks run locally except the optional GitHub release check."))
+
+
+def render_system_view() -> None:
+    render_system_sidebar()
+    st.markdown(section_label("System"), unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sf-view-heading">'
+        f'<h2>{html.escape(t("System health"))}</h2>'
+        f'<p>{html.escape(t("Dependencies, safe updates, and privacy-friendly diagnostics."))}</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    heading_col, refresh_col = st.columns([3, 1])
+    heading_col.markdown(f"### {t('Startup check')}")
+    refresh_health = refresh_col.button(
+        t("Run checks again"),
+        width="stretch",
+        key="refresh_health_checks",
+    )
+    checks = current_health_checks(force=refresh_health)
+    columns = st.columns(2)
+    for index, check in enumerate(checks):
+        with columns[index % 2].container(border=True):
+            icon = (
+                "✅"
+                if check.status == HealthStatus.READY
+                else "⚠️"
+                if check.status == HealthStatus.WARNING
+                else "❌"
+            )
+            st.markdown(f"### {icon} {t(check.name)}")
+            st.caption(t(check.detail))
+            if check.guidance and check.status != HealthStatus.READY:
+                st.code(t(check.guidance), language=None)
+
+    st.markdown(section_label("Defaults"), unsafe_allow_html=True)
+    with st.container(border=True):
+        default_media = st.text_input(
+            t("Default media folder"),
+            value=str(st.session_state.app_settings.media_dir),
+            key="system_default_media_dir",
+        )
+        if st.button(t("Save default folder"), width="stretch"):
+            try:
+                Path(default_media).expanduser().mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                st.error(t("The media folder could not be created: {error}", error=exc))
+            else:
+                updated = replace(st.session_state.app_settings, download_dir=default_media)
+                save_settings(updated)
+                st.session_state.app_settings = updated
+                st.session_state.output_dir = default_media
+                st.session_state.library_dir = default_media
+                st.session_state.pop("health_checks", None)
+                st.success(t("Default media folder saved."))
+
+    st.markdown(section_label("Updates"), unsafe_allow_html=True)
+    settings = st.session_state.app_settings
+    with st.container(border=True):
+        check_updates = st.checkbox(
+            t("Automatically check GitHub for StreamFetch updates"),
+            value=settings.check_updates,
+            key="system_check_updates",
+        )
+        auto_update = st.checkbox(
+            t("Install updates automatically when it is safe"),
+            value=settings.auto_update,
+            disabled=not check_updates,
+            help=t(
+                "Before every installation StreamFetch backs up settings, job state, and "
+                "the library database. Media files are never changed."
+            ),
+            key="system_auto_update",
+        )
+        settings_col, check_col = st.columns(2)
+        if settings_col.button(t("Save update settings"), width="stretch"):
+            updated = replace(
+                settings,
+                check_updates=check_updates,
+                auto_update=auto_update,
+            )
+            save_settings(updated)
+            st.session_state.app_settings = updated
+            st.toast(t("Update settings saved."))
+        if check_col.button(t("Check for updates now"), width="stretch"):
+            with st.spinner(t("Checking GitHub releases…")):
+                check_for_updates(force=True)
+
+        release = st.session_state.get("latest_release")
+        if release:
+            st.success(
+                t(
+                    "Version {version} is ready. A backup is created before installation.",
+                    version=release.version,
+                )
+            )
+            install_col, notes_col = st.columns(2)
+            if install_col.button(t("Back up and install"), type="primary", width="stretch"):
+                with st.spinner(t("Backing up your data and installing the update…")):
+                    st.session_state.update_result = apply_update(
+                        release,
+                        state_dir=default_state_dir(),
+                        library_root=Path(
+                            st.session_state.get("library_dir", settings.media_dir)
+                        ).expanduser(),
+                        project_root=Path(__file__).resolve().parent,
+                    )
+            notes_col.link_button(t("Release notes"), release.url, width="stretch")
+        elif not st.session_state.get("update_error"):
+            st.info(t("You are running the latest available version."))
+        if st.session_state.get("update_error"):
+            st.warning(st.session_state.update_error)
+        result = st.session_state.get("update_result")
+        if result:
+            if result.success:
+                st.success(t(result.message))
+            else:
+                st.error(t(result.message))
+            if result.backup_file:
+                st.caption(t("Backup: {path}", path=result.backup_file))
+            if result.downloaded_file:
+                st.caption(t("Downloaded update: {path}", path=result.downloaded_file))
+                if st.button(
+                    t("Open downloaded update"), width="stretch"
+                ) and not launch_downloaded_update(result.downloaded_file):
+                    st.error(t("The downloaded update could not be opened automatically."))
+
+    st.markdown(section_label("Diagnostics"), unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown(f"### {t('Privacy-safe support bundle')}")
+        st.caption(
+            t(
+                "Contains versions, dependency results, and job counts — never URLs, cookies, "
+                "media filenames, or absolute media paths."
+            )
+        )
+        manager = get_download_manager()
+        archive = diagnostics_archive(
+            checks,
+            language=st.session_state.ui_language,
+            jobs=manager.snapshots(),
+        )
+        st.download_button(
+            t("Download diagnostics"),
+            data=archive,
+            file_name=f"streamfetch-diagnostics-{__version__}.zip",
+            mime="application/zip",
+            width="stretch",
+        )
+
+
 def render_download_view() -> None:
     render_download_sidebar()
     manager = get_download_manager()
@@ -402,6 +796,40 @@ def render_download_view() -> None:
         st.markdown(section_label("Source preview"), unsafe_allow_html=True)
         for preview in st.session_state.previews:
             render_preview(preview)
+        try:
+            selected = selected_download_urls(raw_urls)
+            media_type = st.session_state.media_type
+            quality = (
+                st.session_state.audio_quality
+                if media_type == "audio"
+                else st.session_state.video_quality
+            )
+            estimate = estimate_download_bytes(
+                st.session_state.previews,
+                selected,
+                media_type,
+                quality,
+            )
+        except ValidationError:
+            estimate = None
+        if estimate:
+            output = Path(st.session_state.output_dir).expanduser()
+            existing = output
+            while not existing.exists() and existing != existing.parent:
+                existing = existing.parent
+            try:
+                available = shutil.disk_usage(existing).free
+            except OSError:
+                available = 0
+            message = t(
+                "Estimated download: about {size} · {available} available",
+                size=human_size(estimate),
+                available=human_size(available),
+            )
+            if available and estimate > available:
+                st.error(t("Not enough free space. {message}", message=message))
+            else:
+                st.caption(message)
     if download_clicked:
         enqueue_download(raw_urls, manager)
     render_download_jobs(manager)
@@ -628,11 +1056,11 @@ def render_library_item(
             next_col, queue_col = st.columns(2)
             if next_col.button(t("Play next"), key=f"next_{item_key}", width="stretch"):
                 library.enqueue(item.path, play_next=True)
-                st.toast(f"{item.title} will play next.")
+                st.toast(t("{title} will play next.", title=item.title))
                 st.rerun()
             if queue_col.button(t("Queue"), key=f"queue_{item_key}", width="stretch"):
                 library.enqueue(item.path)
-                st.toast(f"Added {item.title} to the queue.")
+                st.toast(t("Added {title} to the queue.", title=item.title))
                 st.rerun()
 
             if playlists:
@@ -645,7 +1073,13 @@ def render_library_item(
                 )
                 if st.button(t("Add"), key=f"playlist_add_{item_key}", width="stretch"):
                     library.add_to_playlist(playlist_id, item.path)
-                    st.toast(f"Added {item.title} to {playlist_names[playlist_id]}.")
+                    st.toast(
+                        t(
+                            "Added {title} to {playlist}.",
+                            title=item.title,
+                            playlist=playlist_names[playlist_id],
+                        )
+                    )
                     st.rerun()
             if active_playlist_id is not None and st.button(
                 t("Remove from playlist"),
@@ -657,7 +1091,7 @@ def render_library_item(
 
             st.divider()
             modified = datetime.fromtimestamp(item.modified_at).strftime("%Y-%m-%d %H:%M")
-            st.caption(f"{item.format} · Modified {modified}")
+            st.caption(t("{format} · Modified {modified}", format=item.format, modified=modified))
             st.code(str(item.path), language=None)
             st.divider()
             render_metadata_editor(library, item, item_key)
@@ -667,7 +1101,7 @@ def render_metadata_editor(library: MediaLibrary, item: MediaItem, item_key: str
     st.markdown(f"**{t('Edit display metadata')}**")
     st.caption(t("Saved locally; the media file stays unchanged."))
     with st.form(f"metadata_{item_key}"):
-        title = st.text_input("Title", value=item.title)
+        title = st.text_input(t("Title"), value=item.title)
         artist = st.text_input(t("Artist"), value=item.artist)
         album = st.text_input(t("Album"), value=item.album)
         rating = st.select_slider(
@@ -693,16 +1127,19 @@ def render_metadata_editor(library: MediaLibrary, item: MediaItem, item_key: str
                 tags=[tag for tag in tags.split(",")],
             )
         except ValueError as exc:
-            st.error(str(exc))
+            st.error(t(str(exc)))
         else:
-            st.toast("Metadata saved.")
+            st.toast(t("Metadata saved."))
             st.rerun()
 
 
 def render_library_import(library: MediaLibrary) -> None:
     with st.expander(t("Import a local media folder")):
         st.caption(
-            "Supported audio and video files are copied into Imported/ while preserving folders."
+            t(
+                "Supported audio and video files are copied into Imported/ while "
+                "preserving folders."
+            )
         )
         source = st.text_input(
             t("Folder to import"),
@@ -711,15 +1148,20 @@ def render_library_import(library: MediaLibrary) -> None:
         )
         if st.button(t("Import folder"), key="library_import_button", width="stretch"):
             try:
-                with st.spinner("Copying media into the library…"):
+                with st.spinner(t("Copying media into the library…")):
                     summary = library.import_folder(source)
                     library.scan()
             except (OSError, ValueError, sqlite3.Error) as exc:
-                st.error(f"Import failed: {exc}")
+                st.error(t("Import failed: {error}", error=exc))
             else:
                 st.success(
-                    f"Imported {summary.imported} file(s), skipped {summary.skipped}; "
-                    f"saved under {summary.destination}."
+                    t(
+                        "Imported {imported} file(s), skipped {skipped}; "
+                        "saved under {destination}.",
+                        imported=summary.imported,
+                        skipped=summary.skipped,
+                        destination=summary.destination,
+                    )
                 )
 
 
@@ -745,18 +1187,18 @@ def render_discover(library: MediaLibrary) -> None:
     if mode == "Artists":
         facets = library.artists()
         if not facets:
-            st.info("No artists found yet.")
+            st.info(t("No artists found yet."))
             return
         names = {facet.name: f"{facet.name} · {facet.item_count} item(s)" for facet in facets}
-        selected = st.selectbox("Artist", list(names), format_func=names.get)
+        selected = st.selectbox(t("Artist"), list(names), format_func=names.get)
         items = library.items_for_artist(selected)
     elif mode == "Albums":
         facets = library.albums()
         if not facets:
-            st.info("No albums found yet.")
+            st.info(t("No albums found yet."))
             return
         names = {facet.name: f"{facet.name} · {facet.item_count} item(s)" for facet in facets}
-        selected = st.selectbox("Album", list(names), format_func=names.get)
+        selected = st.selectbox(t("Album"), list(names), format_func=names.get)
         items = library.items_for_album(selected)
     elif mode == "Duplicates":
         render_duplicates(library)
@@ -780,9 +1222,9 @@ def render_discover(library: MediaLibrary) -> None:
 
 
 def render_duplicates(library: MediaLibrary) -> None:
-    st.caption("Files are compared by size and SHA-256 content hash. Nothing is deleted.")
-    if st.button("Scan for exact duplicates", type="primary", key="scan_duplicates"):
-        with st.spinner("Hashing files with matching sizes…"):
+    st.caption(t("Files are compared by size and SHA-256 content hash. Nothing is deleted."))
+    if st.button(t("Scan for exact duplicates"), type="primary", key="scan_duplicates"):
+        with st.spinner(t("Hashing files with matching sizes…")):
             groups = library.duplicate_groups()
         st.session_state.library_duplicate_groups = [
             [library.relative_path(item.path) for item in group] for group in groups
@@ -790,7 +1232,7 @@ def render_duplicates(library: MediaLibrary) -> None:
 
     stored_groups = st.session_state.get("library_duplicate_groups")
     if stored_groups is None:
-        st.info("Start a scan to look for byte-identical files.")
+        st.info(t("Start a scan to look for byte-identical files."))
         return
     groups = [
         tuple(item for path in paths if (item := library.item_for_path(path)) is not None)
@@ -798,12 +1240,21 @@ def render_duplicates(library: MediaLibrary) -> None:
     ]
     groups = [group for group in groups if len(group) > 1]
     if not groups:
-        st.success("No exact duplicates found.")
+        st.success(t("No exact duplicates found."))
         return
-    st.warning(f"Found {len(groups)} duplicate group(s). Review the paths before cleanup.")
+    st.warning(
+        t(
+            "Found {count} duplicate group(s). Review the paths before cleanup.",
+            count=len(groups),
+        )
+    )
     for index, group in enumerate(groups, start=1):
         with st.expander(
-            f"Duplicate group {index} · {human_size(group[0].size_bytes)}",
+            t(
+                "Duplicate group {index} · {size}",
+                index=index,
+                size=human_size(group[0].size_bytes),
+            ),
             expanded=index == 1,
         ):
             for item in group:
@@ -833,7 +1284,7 @@ def render_player(library: MediaLibrary) -> None:
     queue = library.queue()
     if current is None:
         st.info(t("Choose an item to open the floating player."))
-        if queue and st.button("Play first queued item", type="primary"):
+        if queue and st.button(t("Play first queued item"), type="primary"):
             item = library.take_queue_entry()
             if item:
                 select_media(library, item)
@@ -933,22 +1384,22 @@ def handle_player_action(library: MediaLibrary, result, previous: MediaItem | No
 def render_playlists(library: MediaLibrary) -> None:
     create_col, button_col = st.columns([3, 1])
     playlist_name = create_col.text_input(
-        "New playlist",
-        placeholder="Road trip, Focus, Favorites…",
+        t("New playlist"),
+        placeholder=t("Road trip, Focus, Favorites…"),
         key="new_playlist_name",
     )
-    if button_col.button("Create", type="primary", width="stretch"):
+    if button_col.button(t("Create"), type="primary", width="stretch"):
         try:
             playlist = library.create_playlist(playlist_name)
         except ValueError as exc:
-            st.error(str(exc))
+            st.error(t(str(exc)))
         else:
             st.session_state.selected_playlist_id = playlist.id
             st.rerun()
 
     playlists = library.playlists()
     if not playlists:
-        st.info("Create your first playlist, then add tracks from Browse or Favorites.")
+        st.info(t("Create your first playlist, then add tracks from Browse or Favorites."))
         return
 
     playlist_names = {
@@ -959,7 +1410,7 @@ def render_playlists(library: MediaLibrary) -> None:
     if selected_id not in valid_ids:
         selected_id = playlists[0].id
     selected_id = st.selectbox(
-        "Playlist",
+        t("Playlist"),
         list(playlist_names),
         index=list(playlist_names).index(selected_id),
         format_func=playlist_names.get,
@@ -968,7 +1419,7 @@ def render_playlists(library: MediaLibrary) -> None:
     st.session_state.selected_playlist_id = selected_id
 
     delete_col, _ = st.columns([1, 3])
-    if delete_col.button("Delete playlist", width="stretch"):
+    if delete_col.button(t("Delete playlist"), width="stretch"):
         library.delete_playlist(selected_id)
         st.session_state.pop("selected_playlist_id", None)
         st.rerun()
@@ -991,17 +1442,17 @@ def render_playlists(library: MediaLibrary) -> None:
 def render_history(library: MediaLibrary) -> None:
     entries = library.history()
     if not entries:
-        st.info("Play something and it will appear here.")
+        st.info(t("Play something and it will appear here."))
         return
-    st.caption(f"Your latest {len(entries)} play action(s).")
+    st.caption(t("Your latest {count} play action(s).", count=len(entries)))
     for entry in entries:
         with st.container(border=True):
             st.markdown('<span class="sf-history-marker"></span>', unsafe_allow_html=True)
             text_col, time_col, play_col = st.columns([3, 2, 1])
             text_col.markdown(f"**{entry.item.title}**  \n{entry.item.artist}")
             played = datetime.fromtimestamp(entry.played_at).strftime("%Y-%m-%d %H:%M")
-            time_col.caption(f"Played {played}")
-            if play_col.button("Play", key=f"history_play_{entry.id}", width="stretch"):
+            time_col.caption(t("Played {time}", time=played))
+            if play_col.button(t("Play"), key=f"history_play_{entry.id}", width="stretch"):
                 select_media(library, entry.item)
 
 
@@ -1039,9 +1490,13 @@ def filter_collection(
 
 def main() -> None:
     render_header()
+    initialize_startup_services()
+    if not st.session_state.app_settings.first_run_completed:
+        render_first_run_dialog()
+    render_startup_notices()
     workspace = st.segmented_control(
         t("Workspace"),
-        ["Download", "Library"],
+        ["Download", "Library", "System"],
         default="Library",
         selection_mode="single",
         format_func=t,
@@ -1049,6 +1504,8 @@ def main() -> None:
     )
     if workspace == "Library":
         render_library_view()
+    elif workspace == "System":
+        render_system_view()
     else:
         render_download_view()
 
@@ -1061,7 +1518,7 @@ def analyze(raw_urls: str) -> None:
             int(st.session_state.max_items) if st.session_state.get("use_limit") else 200
         )
         preview_limit = min(configured_limit, 500)
-        with st.spinner("Reading source information…"):
+        with st.spinner(t("Reading source information…")):
             for url in urls:
                 st.session_state.pop(preview_selection_key(url), None)
                 st.session_state.pop(preview_editor_key(url), None)
@@ -1069,7 +1526,7 @@ def analyze(raw_urls: str) -> None:
                 downloader.inspect(url, limit=preview_limit) for url in urls
             ]
     except (ValidationError, DownloaderError) as exc:
-        st.error(str(exc))
+        st.error(t(str(exc)))
 
 
 def selected_download_urls(raw_urls: str) -> tuple[str, ...]:
@@ -1105,10 +1562,12 @@ def enqueue_download(raw_urls: str, manager: DownloadJobManager) -> None:
         urls = selected_download_urls(raw_urls)
         request = build_request(urls)
     except ValidationError as exc:
-        st.error(str(exc))
+        st.error(t(str(exc)))
         return
     if shutil.which("ffmpeg") is None:
-        st.error("FFmpeg was not found. Install FFmpeg and restart the app before downloading.")
+        st.error(
+            t("FFmpeg was not found. Install FFmpeg and restart the app before downloading.")
+        )
         return
     job_ids = manager.submit(request)
     st.success(t("Queued {count} background download job(s).", count=len(job_ids)))
@@ -1131,8 +1590,8 @@ def render_download_jobs(manager: DownloadJobManager) -> None:
         with st.container(border=True):
             title_col, status_col = st.columns([3, 1])
             title_col.markdown(f"**{job.url}**")
-            status_col.caption(job.status.value.upper())
-            st.progress(job.progress, text=job.message)
+            status_col.caption(t(job.status.value).upper())
+            st.progress(job.progress, text=t(job.message))
 
             details = []
             if job.filename:
@@ -1144,9 +1603,9 @@ def render_download_jobs(manager: DownloadJobManager) -> None:
             if details:
                 st.caption(" · ".join(details))
             if job.error:
-                st.error(job.error)
+                st.error(t(job.error))
 
-            action_col, files_col = st.columns([1, 3])
+            action_col, cancel_col, files_col = st.columns([1, 1, 2])
             if job.status in {JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.PAUSING}:
                 if action_col.button(t("Pause"), key=f"pause_{job.id}", width="stretch"):
                     manager.pause(job.id)
@@ -1161,9 +1620,24 @@ def render_download_jobs(manager: DownloadJobManager) -> None:
                 manager.retry(job.id)
                 st.rerun(scope="fragment")
 
+            if job.status in {
+                JobStatus.QUEUED,
+                JobStatus.RUNNING,
+                JobStatus.PAUSING,
+                JobStatus.PAUSED,
+                JobStatus.FAILED,
+            } and cancel_col.button(
+                t("Cancel"),
+                key=f"cancel_{job.id}",
+                help=t("Stop this job and remove only its temporary partial files."),
+                width="stretch",
+            ):
+                manager.cancel(job.id, cleanup_partial=True)
+                st.rerun(scope="fragment")
+
             if job.files:
                 files_col.caption(
-                    "Created: " + ", ".join(path.name for path in job.files[:4])
+                    t("Created: {files}", files=", ".join(path.name for path in job.files[:4]))
                 )
                 st.session_state.pop("library_scanned_root", None)
 

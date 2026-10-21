@@ -1,4 +1,8 @@
-from streamfetch.downloader import _preview_from_info, resolve_selected_urls
+from streamfetch.downloader import (
+    _preview_from_info,
+    estimate_download_bytes,
+    resolve_selected_urls,
+)
 
 
 def test_preview_normalizes_playlist_entries():
@@ -48,3 +52,26 @@ def test_collection_selection_replaces_source_and_preserves_direct_urls():
         (preview,),
         {collection: ("https://www.youtube.com/watch?v=two",)},
     ) == ("https://www.youtube.com/watch?v=two", direct)
+
+
+def test_estimate_download_size_uses_selected_item_durations():
+    collection = "https://www.youtube.com/playlist?list=mix"
+    preview = _preview_from_info(
+        {
+            "title": "Mix",
+            "entries": [
+                {"id": "one", "duration": 60},
+                {"id": "two", "duration": 120},
+            ],
+        },
+        source_url=collection,
+    )
+
+    estimated = estimate_download_bytes(
+        (preview,),
+        ("https://www.youtube.com/watch?v=two",),
+        "audio",
+        "192K",
+    )
+
+    assert estimated == 120 * 192_000 // 8
