@@ -32,6 +32,8 @@ from streamfetch.library import MediaItem, MediaLibrary, Playlist
 from streamfetch.models import DownloadRequest, MediaType
 from streamfetch.player import build_player_data, render_continuous_player
 from streamfetch.settings import AppSettings, default_state_dir, load_settings, save_settings
+from streamfetch.subscription_ui import render_subscriptions
+from streamfetch.subscriptions import SubscriptionService, SubscriptionStore
 from streamfetch.system import HealthStatus, diagnostics_archive, run_health_checks
 from streamfetch.theme import (
     APP_CSS,
@@ -122,6 +124,7 @@ def check_for_updates(*, force: bool = False) -> ReleaseInfo | None:
 
 def initialize_startup_services() -> None:
     current_health_checks()
+    get_subscription_service()
     settings = st.session_state.app_settings
     if "update_checked" not in st.session_state and settings.check_updates:
         st.session_state.update_checked = True
@@ -1496,7 +1499,7 @@ def main() -> None:
     render_startup_notices()
     workspace = st.segmented_control(
         t("Workspace"),
-        ["Download", "Library", "System"],
+        ["Download", "Library", "Subscriptions", "System"],
         default="Library",
         selection_mode="single",
         format_func=t,
@@ -1506,6 +1509,10 @@ def main() -> None:
         render_library_view()
     elif workspace == "System":
         render_system_view()
+    elif workspace == "Subscriptions":
+        render_subscriptions(
+            get_subscription_service(), default_download_dir(), t, render_language_picker
+        )
     else:
         render_download_view()
 
@@ -1548,13 +1555,24 @@ def selected_download_urls(raw_urls: str) -> tuple[str, ...]:
     return unique
 
 
+@st.cache_resource
+def shared_download_manager(state_path: str) -> DownloadJobManager:
+    return DownloadJobManager(max_workers=2, state_path=Path(state_path))
+
+
 def get_download_manager() -> DownloadJobManager:
-    if "download_job_manager" not in st.session_state:
-        st.session_state.download_job_manager = DownloadJobManager(
-            max_workers=2,
-            state_path=default_job_state_path(),
-        )
-    return st.session_state.download_job_manager
+    return shared_download_manager(str(default_job_state_path()))
+
+
+@st.cache_resource
+def shared_subscription_service(state_dir: str) -> SubscriptionService:
+    return SubscriptionService(
+        SubscriptionStore(Path(state_dir) / "subscriptions.db"), get_download_manager()
+    )
+
+
+def get_subscription_service() -> SubscriptionService:
+    return shared_subscription_service(str(default_state_dir()))
 
 
 def enqueue_download(raw_urls: str, manager: DownloadJobManager) -> None:

@@ -1,3 +1,4 @@
+import re
 import tomllib
 from pathlib import Path
 
@@ -34,11 +35,8 @@ def test_readme_showcase_assets_exist() -> None:
         assert (assets / name).is_file()
 
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    release_assets = assets / "releases" / f"v{project['project']['version']}"
-    for name in (
-        "first-run-setup.png",
-        "download-presets.png",
-        "system-health.png",
-        "product-tour.gif",
-    ):
-        assert (release_assets / name).is_file()
+    notes = ROOT / "docs" / "releases" / f"v{project['project']['version']}.md"
+    references = re.findall(r'\.\./assets/[^\s"\)]+', notes.read_text(encoding="utf-8"))
+    assert references, "Release notes must include real product images."
+    for reference in references:
+        assert (notes.parent / reference).is_file()

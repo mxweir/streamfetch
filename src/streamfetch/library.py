@@ -752,6 +752,21 @@ class MediaLibrary:
                 (playlist_id, relative_path, position, time.time()),
             )
 
+    def sync_source_playlist(self, name: str, paths: list[Path]) -> None:
+        """Replace a source-owned playlist in source order, preserving all media."""
+        relative = list(dict.fromkeys(self.relative_path(path) for path in paths))
+        with self._connection() as connection:
+            connection.execute("INSERT OR IGNORE INTO playlists(name,created_at) VALUES (?,?)",
+                               (name, time.time()))
+            playlist_id = connection.execute("SELECT id FROM playlists WHERE name=?",
+                                             (name,)).fetchone()[0]
+            connection.execute("DELETE FROM playlist_items WHERE playlist_id=?", (playlist_id,))
+            for position, path in enumerate(relative):
+                connection.execute("""INSERT INTO playlist_items
+                    (playlist_id,path,position,created_at)
+                    SELECT ?,path,?,? FROM media_items WHERE path=?""",
+                                   (playlist_id, position, time.time(), path))
+
     def remove_from_playlist(self, playlist_id: int, path: Path | str) -> None:
         relative_path = self.relative_path(path)
         with self._connection() as connection:

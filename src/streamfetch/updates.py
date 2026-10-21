@@ -145,8 +145,22 @@ def create_pre_update_backup(
             path = state_dir / filename
             if path.is_file():
                 archive.write(path, f"state/{filename}")
-        database = library_root / ".streamfetch" / "library.db" if library_root else None
-        if database and database.is_file():
+        databases = {}
+        if library_root:
+            databases["library/library.db"] = library_root / ".streamfetch" / "library.db"
+        subscriptions = state_dir / "subscriptions.db"
+        if subscriptions.is_file():
+            databases["state/subscriptions.db"] = subscriptions
+            with sqlite3.connect(f"file:{subscriptions}?mode=ro", uri=True) as connection:
+                for index, (root,) in enumerate(
+                    connection.execute("SELECT DISTINCT root FROM sources")
+                ):
+                    databases[f"libraries/source-{index}/library.db"] = (
+                        Path(root) / ".streamfetch" / "library.db"
+                    )
+        for member, database in databases.items():
+            if not database.is_file():
+                continue
             with tempfile.TemporaryDirectory(prefix="streamfetch-backup-") as temporary:
                 snapshot = Path(temporary) / "library.db"
                 source = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
@@ -156,7 +170,7 @@ def create_pre_update_backup(
                 finally:
                     destination.close()
                     source.close()
-                archive.write(snapshot, "library/library.db")
+                archive.write(snapshot, member)
         archive.writestr(
             "RESTORE.txt",
             "Close StreamFetch before restoring these files. Media files are never modified.\n",
@@ -221,9 +235,7 @@ def apply_update(
         )
         cwd = root
     else:
-        archive_url = (
-            f"https://github.com/{REPOSITORY}/archive/refs/tags/v{release.version}.zip"
-        )
+        archive_url = f"https://github.com/{REPOSITORY}/archive/refs/tags/v{release.version}.zip"
         commands = ([sys.executable, "-m", "pip", "install", "--upgrade", archive_url],)
         cwd = None
 

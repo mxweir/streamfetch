@@ -27,6 +27,9 @@ class Downloader:
             "skip_download": True,
             "extract_flat": "in_playlist",
             "playlistend": limit,
+            "socket_timeout": 20,
+            "retries": 2,
+            "extractor_retries": 2,
         }
         try:
             with yt_dlp.YoutubeDL(options) as ydl:
