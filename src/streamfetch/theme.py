@@ -487,7 +487,7 @@ def hero_html(translate=lambda text: text) -> str:
 <header class="sf-appbar">
     <div class="sf-appbar__brand">
         <span class="sf-logo">{LOGO_SVG}</span>
-        <div><strong>StreamFetch</strong><br><small>Local media studio · 1.3</small></div>
+        <div><strong>StreamFetch</strong><br><small>Local media studio · 1.6</small></div>
     </div>
     <div class="sf-appbar__status">
         <span class="sf-status-dot"></span><small>{translate("Private on this device")}</small>

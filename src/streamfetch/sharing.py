@@ -1,0 +1,343 @@
+"""Opt-in, authenticated read-only player for a selected library on a trusted LAN."""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import mimetypes
+import re
+import secrets
+import socket
+import threading
+import time
+from http.cookies import SimpleCookie
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+
+from streamfetch.library import MediaLibrary
+
+ASSETS = Path(__file__).parent / "assets" / "mobile"
+
+
+def local_address():
+    try:
+        addresses = socket.gethostbyname_ex(socket.gethostname())[2]
+        return next(value for value in addresses if not value.startswith("127."))
+    except (OSError, StopIteration):
+        return "127.0.0.1"
+
+
+def byte_range(header, size):
+    if not header:
+        return 0, size - 1, False
+    match = re.fullmatch(r"bytes=(\d*)-(\d*)", header)
+    if not match or not any(match.groups()) or size == 0:
+        raise ValueError("Invalid byte range")
+    first, last = match.groups()
+    if not first:
+        count = int(last)
+        if count <= 0:
+            raise ValueError("Invalid suffix range")
+        start, end = max(0, size - count), size - 1
+    else:
+        start, end = int(first), min(int(last) if last else size - 1, size - 1)
+    if start >= size or start > end:
+        raise ValueError("Unsatisfiable byte range")
+    return start, end, True
+
+
+class HomePlayer:
+    def __init__(self, library: MediaLibrary, *, host="0.0.0.0", port=8767):
+        self.library = library
+        self.secret = secrets.token_urlsafe(18)
+        self._key = secrets.token_bytes(32)
+        self._sessions = {}
+        self._attempts = {}
+        self._lock = threading.RLock()
+        self.address = local_address()
+        self._allowed_hosts = {self.address, "127.0.0.1", "localhost", socket.gethostname()}
+        owner = self
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def setup(self):
+                super().setup()
+                self.connection.settimeout(15)
+
+            def log_message(self, *args):
+                pass  # Never log credentials, cookies or library filenames.
+
+            def respond(self, status, body=b"", mime="text/plain; charset=utf-8", headers=None):
+                self.send_response(status)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                # Keep same-origin form POSTs verifiable; no-referrer makes Origin null.
+                self.send_header("Referrer-Policy", "same-origin")
+                self.send_header(
+                    "Content-Security-Policy",
+                    "default-src 'self'; "
+                    "script-src 'self'; style-src 'self'; media-src 'self'; "
+                    "img-src 'self' data:; frame-ancestors 'none'; form-action 'self'",
+                )
+                for name, value in (headers or {}).items():
+                    self.send_header(name, value)
+                self.end_headers()
+                if self.command != "HEAD":
+                    self.wfile.write(body)
+
+            def valid_host(self):
+                try:
+                    parsed = urlsplit("http://" + self.headers.get("Host", ""))
+                    return (
+                        parsed.hostname in owner._allowed_hosts
+                        and parsed.port == owner.port
+                        and parsed.username is None
+                    )
+                except ValueError:
+                    return False
+
+            def authenticated(self):
+                cookie = SimpleCookie()
+                try:
+                    cookie.load(self.headers.get("Cookie", ""))
+                    token = cookie["streamfetch_session"].value
+                except (KeyError, ValueError):
+                    return False
+                with owner._lock:
+                    return owner._sessions.get(token, 0) > time.time()
+
+            def do_HEAD(self):
+                self.do_GET()
+
+            def do_GET(self):
+                if not self.valid_host():
+                    self.respond(403, b"Unrecognized host")
+                    return
+                route = urlsplit(self.path).path
+                if route == "/logo.svg":
+                    logo = Path(__file__).parent / "assets" / "streamfetch-mark.svg"
+                    if not logo.exists():
+                        logo = (
+                            Path(__file__).resolve().parents[2] / "docs/assets/streamfetch-mark.svg"
+                        )
+                    self.respond(200, logo.read_bytes(), "image/svg+xml")
+                    return
+                if route == "/login":
+                    self.respond(
+                        200, (ASSETS / "login.html").read_bytes(), "text/html; charset=utf-8"
+                    )
+                    return
+                if route in {"/style.css", "/player.js"}:
+                    self.respond(
+                        200,
+                        (ASSETS / route[1:]).read_bytes(),
+                        "text/css" if route.endswith("css") else "text/javascript",
+                    )
+                    return
+                if not self.authenticated():
+                    self.respond(303, headers={"Location": "/login"})
+                    return
+                if route == "/":
+                    self.respond(
+                        200, (ASSETS / "index.html").read_bytes(), "text/html; charset=utf-8"
+                    )
+                elif route == "/api/library":
+                    items = owner.items()
+                    self.respond(200, json.dumps(items).encode(), "application/json")
+                elif route.startswith("/media/"):
+                    self.stream(route.removeprefix("/media/"))
+                else:
+                    self.respond(404)
+
+            def stream(self, identifier):
+                item = None
+                for candidate in owner.library.list_items(limit=100000):
+                    try:
+                        if owner.identifier(candidate.path) == identifier:
+                            item = candidate
+                            break
+                    except ValueError:
+                        continue
+                if item is None:
+                    self.respond(404)
+                    return
+                try:
+                    owner.library.relative_path(item.path)  # Revalidate symlink containment.
+                    with item.path.open("rb") as media:
+                        size = item.path.stat().st_size
+                        try:
+                            start, end, partial = byte_range(self.headers.get("Range"), size)
+                        except ValueError:
+                            self.respond(416, headers={"Content-Range": f"bytes */{size}"})
+                            return
+                        length = max(0, end - start + 1)
+                        self.send_response(206 if partial else 200)
+                        self.send_header(
+                            "Content-Type",
+                            mimetypes.guess_type(item.path.name)[0] or "application/octet-stream",
+                        )
+                        self.send_header("Content-Length", str(length))
+                        self.send_header("Accept-Ranges", "bytes")
+                        self.send_header("Cache-Control", "private, no-store")
+                        self.send_header("X-Content-Type-Options", "nosniff")
+                        if partial:
+                            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+                        self.end_headers()
+                        if self.command == "HEAD":
+                            return
+                        media.seek(start)
+                        while length:
+                            chunk = media.read(min(length, 256 * 1024))
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                            length -= len(chunk)
+                except (OSError, ValueError):
+                    self.close_connection = True
+
+            def do_POST(self):
+                origin = self.headers.get("Origin")
+                if (
+                    not self.valid_host()
+                    or (origin and origin != f"http://{self.headers.get('Host')}")
+                    or self.headers.get("Sec-Fetch-Site") == "cross-site"
+                ):
+                    self.respond(403)
+                    return
+                route = urlsplit(self.path).path
+                if route == "/logout":
+                    cookie = SimpleCookie(self.headers.get("Cookie", ""))
+                    with owner._lock:
+                        if "streamfetch_session" in cookie:
+                            owner._sessions.pop(cookie["streamfetch_session"].value, None)
+                    self.respond(
+                        303,
+                        headers={
+                            "Location": "/login",
+                            "Set-Cookie": "streamfetch_session=; Path=/; HttpOnly; "
+                            "SameSite=Strict; Max-Age=0",
+                        },
+                    )
+                    return
+                if route != "/login":
+                    self.respond(404)
+                    return
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                    if not 0 < length <= 1024:
+                        raise ValueError
+                except ValueError:
+                    self.respond(413)
+                    self.close_connection = True
+                    return
+                form = parse_qs(self.rfile.read(length).decode("utf-8", errors="replace"))
+                with owner._lock:
+                    now = time.time()
+                    owner._attempts = {
+                        ip: attempts
+                        for ip, attempts in owner._attempts.items()
+                        if attempts and attempts[-1] > now - 60
+                    }
+                    attempts = [
+                        ts
+                        for ts in owner._attempts.get(self.client_address[0], [])
+                        if ts > now - 60
+                    ]
+                    if len(attempts) >= 5:
+                        self.respond(429, b"Too many attempts. Try again in one minute.")
+                        return
+                    attempts.append(now)
+                    owner._attempts[self.client_address[0]] = attempts
+                    supplied = form.get("secret", [""])[0]
+                    if not hmac.compare_digest(supplied.encode(), owner.secret.encode()):
+                        self.respond(403, b"Incorrect pairing code. Return to /login to retry.")
+                        return
+                    owner._sessions = {
+                        key: expiry for key, expiry in owner._sessions.items() if expiry > now
+                    }
+                    if len(owner._sessions) >= 32:
+                        self.respond(429, b"Too many sessions. Restart sharing to revoke them.")
+                        return
+                    token = secrets.token_urlsafe(32)
+                    owner._sessions[token] = now + 43200
+                self.respond(
+                    303,
+                    headers={
+                        "Location": "/",
+                        "Set-Cookie": f"streamfetch_session={token}; Path=/; HttpOnly; "
+                        "SameSite=Strict; Max-Age=43200",
+                    },
+                )
+
+        self._server = ThreadingHTTPServer((host, int(port)), Handler)
+        self._server.daemon_threads = True
+        self.port = self._server.server_port
+        self._thread = threading.Thread(
+            target=self._server.serve_forever, daemon=True, name="streamfetch-home-player"
+        )
+        self._thread.start()
+
+    @property
+    def url(self):
+        return f"http://{self.address}:{self.port}"
+
+    def identifier(self, path):
+        return hmac.new(
+            self._key, self.library.relative_path(path).encode(), hashlib.sha256
+        ).hexdigest()[:32]
+
+    def items(self):
+        memberships = {}
+        for playlist in self.library.playlists():
+            for item in self.library.playlist_items(playlist.id):
+                memberships.setdefault(str(item.path), []).append(playlist.name)
+        result = []
+        for item in self.library.list_items(limit=100000):
+            try:
+                identifier = self.identifier(item.path)
+                if not item.path.is_file():
+                    continue
+            except (OSError, ValueError):
+                continue
+            result.append(
+                dict(
+                    id=identifier,
+                    title=item.title,
+                    artist=item.artist,
+                    album=item.album,
+                    media_type=item.media_type,
+                    duration=item.duration_seconds,
+                    playlists=memberships.get(str(item.path), []),
+                )
+            )
+        return result
+
+    def stop(self):
+        with self._lock:
+            self._sessions.clear()
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=2)
+
+
+class SharingService:
+    def __init__(self):
+        self.player = None
+        self._lock = threading.RLock()
+
+    def start(self, library, port):
+        with self._lock:
+            if self.player:
+                raise ValueError("Stop the existing sharing session first.")
+            self.player = HomePlayer(library, port=port)
+
+    def stop(self):
+        with self._lock:
+            if self.player:
+                self.player.stop()
+                self.player = None

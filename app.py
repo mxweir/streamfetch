@@ -29,9 +29,11 @@ from streamfetch.downloader import (
 from streamfetch.i18n import LANGUAGES, default_language, player_labels, translate
 from streamfetch.jobs import DownloadJobManager, JobStatus, default_job_state_path
 from streamfetch.library import MediaItem, MediaLibrary, Playlist
+from streamfetch.listening import ListeningLibrary
 from streamfetch.models import DownloadRequest, MediaType
 from streamfetch.player import build_player_data, render_continuous_player
 from streamfetch.settings import AppSettings, default_state_dir, load_settings, save_settings
+from streamfetch.studio_ui import folder_watcher, render_studio
 from streamfetch.subscription_ui import render_subscriptions
 from streamfetch.subscriptions import SubscriptionService, SubscriptionStore
 from streamfetch.system import HealthStatus, diagnostics_archive, run_health_checks
@@ -839,6 +841,8 @@ def render_download_view() -> None:
 
 
 def render_library_view() -> None:
+    if "pending_library_root" in st.session_state:
+        st.session_state.library_dir = st.session_state.pop("pending_library_root")
     render_library_sidebar()
     root = Path(st.session_state.library_dir).expanduser().resolve()
     library = MediaLibrary(root)
@@ -903,7 +907,7 @@ def render_library_view() -> None:
 
     section = st.segmented_control(
         t("Library section"),
-        ["Home", "Browse", "Discover", "Favorites", "Playlists", "History"],
+        ["Home", "Browse", "Discover", "Favorites", "Playlists", "History", "Studio"],
         default="Home",
         selection_mode="single",
         format_func=t,
@@ -920,6 +924,9 @@ def render_library_view() -> None:
         return
     if section == "Discover":
         render_discover(library)
+        return
+    if section == "Studio":
+        render_studio(library, t, render_media_grid)
         return
 
     search = st.session_state.library_search
@@ -1307,6 +1314,9 @@ def render_player(library: MediaLibrary) -> None:
         resume_position=library.playback_position(current.path),
         visualizer_mode=library.player_setting("visualizer", "off"),
         labels=dict(player_labels(st.session_state.get("ui_language"))),
+        playback_speed=float(library.player_setting("speed", "1")),
+        seek_request=st.session_state.get("player_seek_request"),
+        library_key=str(library.root),
     )
     result = render_continuous_player(player_data)
     handle_player_action(library, result, previous)
@@ -1322,6 +1332,15 @@ def handle_player_action(library: MediaLibrary, result, previous: MediaItem | No
     st.session_state.processed_player_action = nonce
 
     action_type = action.get("type")
+    if action_type == "speed" and action.get("speed") in {0.75, 1, 1.25, 1.5, 2}:
+        library.set_player_setting("speed", str(action["speed"]))
+        st.rerun()
+    if action_type == "bookmark" and isinstance(action.get("position"), (int, float)):
+        current = library.current_item()
+        if current:
+            seconds = float(action["position"])
+            ListeningLibrary(library).add_bookmark(current.path, seconds, t("Quick bookmark"))
+            st.toast(t("Bookmark saved"))
     if action_type == "favorite":
         current = library.current_item()
         if current:
@@ -1493,6 +1512,7 @@ def filter_collection(
 
 def main() -> None:
     render_header()
+    folder_watcher(str(default_state_dir()))
     initialize_startup_services()
     if not st.session_state.app_settings.first_run_completed:
         render_first_run_dialog()

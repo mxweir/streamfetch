@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import multiprocessing
 import os
 import socket
 import subprocess
@@ -133,7 +134,13 @@ def main() -> int:
     return 0
 
 
-if __name__ == "__main__":
+def entrypoint() -> int:
+    # PyInstaller must dispatch Whisper/Hugging Face helper processes, not open another app.
+    multiprocessing.freeze_support()
     if len(sys.argv) == 3 and sys.argv[1] == "--streamfetch-server":
-        raise SystemExit(run_frozen_server(int(sys.argv[2])))
-    raise SystemExit(main())
+        return run_frozen_server(int(sys.argv[2]))
+    return main()
+
+
+if __name__ == "__main__":
+    raise SystemExit(entrypoint())

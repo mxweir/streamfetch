@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Pair · StreamFetch</title>
+  <link rel="icon" href="/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="login">
+    <div class="brand"><img src="/logo.svg" alt="StreamFetch">STREAMFETCH / HOME</div>
+    <p class="eyebrow">YOUR LIBRARY. YOUR NETWORK.</p>
+    <h1>A little closer<br><em>to your music.</em></h1>
+    <p>Enter the pairing code shown in StreamFetch. Only the library selected on your computer is shared.</p>
+    <form method="post" action="/login">
+      <label for="secret">Pairing code</label>
+      <input id="secret" name="secret" type="password" required
+             autocomplete="current-password" maxlength="100">
+      <button>Connect to library →</button>
+    </form>
+    <small>Trusted home networks only. This HTTP connection is not encrypted.
+      Never forward this port to the internet.</small>
+  </main>
+</body>
+</html>

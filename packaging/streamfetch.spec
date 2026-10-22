@@ -18,7 +18,10 @@ datas = [
 ]
 binaries = []
 hiddenimports = []
-for package in ("streamlit", "yt_dlp", "mutagen", "webview", "streamfetch"):
+for package in (
+    "streamlit", "yt_dlp", "mutagen", "webview", "streamfetch",
+    "faster_whisper", "ctranslate2", "tokenizers", "av",
+):
     package_datas, package_binaries, package_hidden = collect_all(package)
     datas += package_datas
     binaries += package_binaries
@@ -52,7 +55,7 @@ if sys.platform == "darwin":
         bundle_identifier="com.mxweir.streamfetch",
         info_plist={
             "CFBundleDisplayName": "StreamFetch",
-            "CFBundleShortVersionString": "1.3.0",
+            "CFBundleShortVersionString": "1.6.0",
             "NSHighResolutionCapable": True,
         },
     )

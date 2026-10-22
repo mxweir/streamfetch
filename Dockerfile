@@ -11,6 +11,8 @@ RUN apt-get update \
 WORKDIR /app
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
+COPY app.py ./
+COPY docs/assets/streamfetch-mark.svg ./docs/assets/streamfetch-mark.svg
 RUN python -m pip install --upgrade pip && pip install .
 
 COPY app.py ./

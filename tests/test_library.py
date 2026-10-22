@@ -1,10 +1,20 @@
 import random
 import sqlite3
 import wave
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
 from streamfetch.library import MediaLibrary
+
+
+def test_parallel_library_readers_keep_indexes_stable(tmp_path, monkeypatch):
+    monkeypatch.setattr("streamfetch.library.shutil.which", lambda _: None)
+    library = MediaLibrary(tmp_path)
+    library.scan()
+    with ThreadPoolExecutor(max_workers=6) as workers:
+        results = list(workers.map(lambda _: MediaLibrary(tmp_path).favorite_paths(), range(60)))
+    assert results == [set()] * 60
 
 
 @pytest.fixture
