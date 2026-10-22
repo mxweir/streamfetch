@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import random
@@ -16,6 +17,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from mutagen import File as MutagenFile
+from mutagen import MutagenError
+from mutagen.flac import Picture
 
 AUDIO_EXTENSIONS = {".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav"}
 VIDEO_EXTENSIONS = {".mkv", ".mp4", ".webm"}
@@ -891,8 +894,12 @@ class MediaLibrary:
                 "ALTER TABLE queue ADD COLUMN position INTEGER NOT NULL DEFAULT 0"
             )
             connection.execute("UPDATE queue SET position = id")
-        connection.execute("DROP INDEX IF EXISTS queue_order")
-        connection.execute("CREATE INDEX queue_order ON queue(position, id)")
+        index_columns = [
+            row["name"] for row in connection.execute("PRAGMA index_info(queue_order)")
+        ]
+        if index_columns and index_columns != ["position", "id"]:
+            connection.execute("DROP INDEX IF EXISTS queue_order")
+        connection.execute("CREATE INDEX IF NOT EXISTS queue_order ON queue(position, id)")
         media_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(media_items)")
         }
@@ -945,6 +952,10 @@ class MediaLibrary:
                 metadata["title"] = _first_tag(tags, "title") or metadata["title"]
                 metadata["artist"] = _first_tag(tags, "artist") or metadata["artist"]
                 metadata["album"] = _first_tag(tags, "album") or metadata["album"]
+                # WAV exposes ID3 frames even when easy=True.
+                for field, frame in (("title", "TIT2"), ("artist", "TPE1"), ("album", "TALB")):
+                    if frame in tags:
+                        metadata[field] = str(tags[frame]) or metadata[field]
                 metadata["source_url"] = _first_tag(tags, "purl")
                 length = getattr(getattr(media, "info", None), "length", None)
                 metadata["duration_seconds"] = float(length) if length else None
@@ -1033,6 +1044,13 @@ def _cover_from_media(media: Any) -> tuple[bytes, str] | None:
     if covers:
         data = bytes(covers[0])
         return data, _image_extension(data)
+    vorbis_pictures = tags.get("metadata_block_picture")
+    if vorbis_pictures:
+        try:
+            picture = Picture(base64.b64decode(vorbis_pictures[0], validate=True))
+            return picture.data, _image_extension(picture.data)
+        except (ValueError, MutagenError):
+            return None
     return None
 
 

@@ -79,6 +79,26 @@ def test_update_backup_contains_state_and_library_database(tmp_path):
         assert connection.execute("SELECT title FROM media").fetchone() == ("kept",)
 
 
+def test_update_backup_includes_watched_library_and_listening_state(tmp_path):
+    from streamfetch.library import MediaLibrary
+    from streamfetch.listening import ListeningLibrary
+
+    state = tmp_path / "state"
+    state.mkdir()
+    root = tmp_path / "watched"
+    library = MediaLibrary(root)
+    library.scan()
+    ListeningLibrary(library).save_smart("Keep my rules", minimum_rating=4)
+    (state / "watched-folders.json").write_text(json.dumps([str(root)]))
+    backup = create_pre_update_backup(state, None, "1.6.0")
+    with zipfile.ZipFile(backup) as archive:
+        assert json.loads(archive.read("state/watched-folders.json")) == [str(root)]
+        snapshot = tmp_path / "snapshot.db"
+        snapshot.write_bytes(archive.read("libraries/watched-0/library.db"))
+    with sqlite3.connect(snapshot) as db:
+        assert db.execute("SELECT name FROM smart_playlists").fetchone() == ("Keep my rules",)
+
+
 def test_source_update_refuses_dirty_checkout(monkeypatch, tmp_path):
     (tmp_path / ".git").mkdir()
     release = ReleaseInfo("1.2.0", "Release", "https://example.invalid")

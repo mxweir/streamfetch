@@ -4,6 +4,36 @@ Every StreamFetch release is documented with the same visual format: a short
 summary, an authentic product image, user-visible changes, upgrade notes, and
 verification details. Full visual notes live in [`docs/releases`](docs/releases).
 
+## [1.6.0] — Your library, elevated
+
+_Released 2026-10-22 · [Full visual release notes](docs/releases/v1.6.0.md)_
+
+<p align="center">
+  <img src="docs/assets/releases/v1.6.0/product-tour.gif" width="680" alt="Actual smart playlists, bookmarks and local speech search in StreamFetch 1.6">
+</p>
+
+### Highlights
+
+- **1.4 — Smart Library & Listening:** live smart playlists, in-place folder watching,
+  bookmarks, chapter jumps, speed, sleep timer and real-file tags with original backups.
+- **1.5 — Local Speech Search:** optional on-device transcription, background jobs,
+  SRT/VTT import, timestamped phrase search, player jumps and SRT/text export.
+- **1.6 — Listen Everywhere at Home:** opt-in, read-only mobile player with pairing,
+  playlists, search, byte-range streaming and expiring sessions on trusted home Wi-Fi.
+- Added watched libraries to update backups and kept existing media and collections intact.
+- Fixed concurrent queue-index creation, frozen multiprocessing helper dispatch,
+  compatible audio dependencies and same-origin form authentication.
+- Updated README, security documentation and authentic desktop/mobile visuals.
+
+### Quality
+
+- Local suite: 126 passed, one optional FFprobe integration skipped; 80% measured coverage.
+- Automated service, persistence, metadata, UI, authentication and streaming tests.
+- Actual local model transcription, real multi-format tagging/cover writing and
+  original restoration, plus desktop and mobile browser verification.
+- Optional FFprobe integration is skipped when FFprobe is not installed.
+- Manual interactive Windows startup remains deferred to the user.
+
 ## [1.3.0] — Subscriptions & Smart Sync
 
 _Released 2026-10-21 · [Full visual release notes](docs/releases/v1.3.0.md)_
@@ -119,4 +149,5 @@ _Released 2026-10-20 · [Full visual release notes](docs/releases/v1.0.0.md)_
 [1.0.0]: https://github.com/mxweir/streamfetch/releases/tag/v1.0.0
 [1.1.0]: https://github.com/mxweir/streamfetch/releases/tag/v1.1.0
 [1.2.0]: https://github.com/mxweir/streamfetch/releases/tag/v1.2.0
+[1.6.0]: https://github.com/mxweir/streamfetch/releases/tag/v1.6.0
 [1.3.0]: https://github.com/mxweir/streamfetch/releases/tag/v1.3.0

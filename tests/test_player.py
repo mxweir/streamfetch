@@ -69,6 +69,9 @@ def test_build_player_data_preloads_next_queue_entry() -> None:
         visualizer_mode="spectrum",
         labels={"shuffle": "MISCHEN"},
         media_manager=manager,
+        playback_speed=1.5,
+        seek_request={"nonce": "test", "seconds": 8, "path": str(current.path)},
+        library_key="local-test-library",
     )
 
     assert data["current"]["url"] == "/media/current.mp3"
@@ -81,6 +84,9 @@ def test_build_player_data_preloads_next_queue_entry() -> None:
     assert data["repeat_mode"] == "all"
     assert data["crossfade_seconds"] == 4
     assert data["resume_position"] == 12.5
+    assert data["playback_speed"] == 1.5
+    assert data["seek_request"]["seconds"] == 8
+    assert data["library_key"] == "local-test-library"
     assert data["visualizer_mode"] == "spectrum"
     assert data["labels"]["shuffle"] == "MISCHEN"
     assert data["queue"] == [

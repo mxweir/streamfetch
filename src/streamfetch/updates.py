@@ -141,13 +141,20 @@ def create_pre_update_backup(
     backup_dir.mkdir(parents=True, exist_ok=True)
     backup_path = backup_dir / f"before-{target_version}-{int(time.time())}.zip"
     with zipfile.ZipFile(backup_path, "w", zipfile.ZIP_DEFLATED) as archive:
-        for filename in ("settings.json", "download-jobs.json", "update-cache.json"):
+        for filename in ("settings.json", "download-jobs.json", "update-cache.json",
+                         "watched-folders.json"):
             path = state_dir / filename
             if path.is_file():
                 archive.write(path, f"state/{filename}")
         databases = {}
         if library_root:
             databases["library/library.db"] = library_root / ".streamfetch" / "library.db"
+        watched = state_dir / "watched-folders.json"
+        if watched.is_file():
+            for index, root in enumerate(json.loads(watched.read_text())):
+                databases[f"libraries/watched-{index}/library.db"] = (
+                    Path(root) / ".streamfetch" / "library.db"
+                )
         subscriptions = state_dir / "subscriptions.db"
         if subscriptions.is_file():
             databases["state/subscriptions.db"] = subscriptions

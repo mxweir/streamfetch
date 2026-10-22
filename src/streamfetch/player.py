@@ -65,6 +65,9 @@ PLAYER_HTML = """
               aria-label="Change visualization">VIS OFF</button>
       <button type="button" data-repeat aria-label="Change repeat mode">REPEAT OFF</button>
       <button type="button" data-crossfade aria-label="Change crossfade duration">XF 0S</button>
+      <button type="button" data-speed aria-label="Change playback speed">1×</button>
+      <button type="button" data-sleep aria-label="Sleep timer">SLEEP OFF</button>
+      <button type="button" data-bookmark aria-label="Bookmark current position">◇</button>
     </div>
     <div class="sf-player-queue-head">
       <strong>UP NEXT · DRAG TO REORDER</strong>
@@ -225,6 +228,7 @@ PLAYER_CSS = """
   gap: .35rem;
 }
 .sf-player-footer input { max-width: 90px; }
+.sf-player-footer { flex-wrap: wrap; justify-content: flex-start; }
 .sf-player-status { color: #8ce0b7; }
 .sf-player-queue-head > div { display: flex; gap: .3rem; }
 .sf-player-queue {
@@ -331,6 +335,9 @@ export default function(component) {
   const favorite = root.querySelector("[data-favorite]");
   const repeat = root.querySelector("[data-repeat]");
   const crossfade = root.querySelector("[data-crossfade]");
+  const speed = root.querySelector("[data-speed]");
+  const sleep = root.querySelector("[data-sleep]");
+  const bookmark = root.querySelector("[data-bookmark]");
   const expand = root.querySelector("[data-expand]");
   const shuffle = root.querySelector("[data-shuffle]");
   const clear = root.querySelector("[data-clear]");
@@ -365,6 +372,41 @@ export default function(component) {
   root.__streamfetchState = state;
 
   const activeMedia = () => state.track?.media_type === "video" ? video : audio;
+  const sleepKey = `sf-sleep-${data.library_key}`;
+  if (state.sleepKey !== sleepKey) {
+    state.sleepKey = sleepKey;
+    try { state.sleepDeadline = Number(localStorage.getItem(sleepKey) || 0); }
+    catch { state.sleepDeadline = 0; }
+  }
+  const syncSleep = () => {
+    const remaining = Math.max(0, (state.sleepDeadline || 0) - Date.now());
+    sleep.textContent = remaining ? `SLEEP ${Math.ceil(remaining / 60000)}M` : "SLEEP OFF";
+  };
+  speed.textContent = `${data.playback_speed ?? 1}×`;
+  speed.onclick = () => {
+    const values = [0.75, 1, 1.25, 1.5, 2];
+    const rate = values[(values.indexOf(Number(data.playback_speed ?? 1)) + 1) % values.length];
+    activeMedia().playbackRate = rate;
+    emit("speed", {speed: rate});
+  };
+  sleep.onclick = () => {
+    const remaining = Math.ceil(Math.max(0, (state.sleepDeadline || 0)-Date.now())/60000);
+    const minutes = remaining === 0 ? 15 : remaining <= 15 ? 30 : remaining <= 30 ? 60 : 0;
+    state.sleepDeadline = minutes ? Date.now() + minutes * 60000 : 0;
+    try { localStorage.setItem(sleepKey, String(state.sleepDeadline)); } catch {}
+    syncSleep();
+  };
+  bookmark.onclick = () => emit("bookmark", {position: activeMedia().currentTime});
+  const sleepInterval = setInterval(() => {
+    if (state.sleepDeadline && Date.now() >= state.sleepDeadline) {
+      state.sleepDeadline = 0;
+      try { localStorage.removeItem(sleepKey); } catch {}
+      activeMedia().pause();
+      emit("position", {position: activeMedia().currentTime});
+    }
+    syncSleep();
+  }, 1000);
+  syncSleep();
 
   const syncMeta = (track) => {
     title.textContent = track.title;
@@ -515,6 +557,7 @@ export default function(component) {
     const media = track.media_type === "video" ? video : audio;
     if (oldMedia !== media) oldMedia.pause();
     state.track = track;
+    media.playbackRate = Number(data.playback_speed ?? 1);
 
     if (track.media_type === "video") {
       if (!videoSlot.contains(video)) videoSlot.appendChild(video);
@@ -613,6 +656,12 @@ export default function(component) {
     }
   };
   const onLoaded = () => {
+    const request = data.seek_request;
+    if (request && request.path === state.track?.path && request.nonce !== state.seekNonce) {
+      activeMedia().currentTime = Math.min(request.seconds, activeMedia().duration || Infinity);
+      state.seekNonce = request.nonce;
+      state.restoring = false;
+    }
     if (state.restoring && data.resume_position > 0) {
       const media = activeMedia();
       if (!Number.isFinite(media.duration) || data.resume_position < media.duration - 3) {
@@ -708,6 +757,9 @@ export default function(component) {
     syncProgress();
     syncPlayback();
   }
+  activeMedia().playbackRate = Number(data.playback_speed ?? 1);
+  if (activeMedia().readyState >= 1) onLoaded();
+  if (data.autoplay && sameTrack) activeMedia().play().catch(() => {});
 
   renderQueue();
   root.classList.toggle("is-expanded", state.expanded);
@@ -722,6 +774,7 @@ export default function(component) {
   }
 
   return () => {
+    clearInterval(sleepInterval);
     window.removeEventListener("resize", positionDock);
     if (state.visualizerFrame) cancelAnimationFrame(state.visualizerFrame);
     dockTarget.removeAttribute("data-streamfetch-player-dock");
@@ -778,6 +831,9 @@ def build_player_data(
     visualizer_mode: str = "off",
     labels: dict[str, str] | None = None,
     media_manager: Any | None = None,
+    playback_speed: float = 1,
+    seek_request: dict | None = None,
+    library_key: str = "default",
 ) -> dict[str, Any]:
     """Create the trusted payload passed to the continuous player component."""
 
@@ -814,6 +870,9 @@ def build_player_data(
         "resume_position": resume_position,
         "visualizer_mode": visualizer_mode,
         "labels": labels or {},
+        "playback_speed": playback_speed,
+        "seek_request": seek_request,
+        "library_key": library_key,
     }
 
 

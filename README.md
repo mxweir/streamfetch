@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/releases/v1.3.0/product-tour.gif" width="760" alt="StreamFetch 1.3 product tour showing subscriptions, new arrivals, source settings, and sync history">
+  <img src="docs/assets/releases/v1.6.0/product-tour.gif" width="760" alt="StreamFetch 1.6 showing smart playlists, listening tools and timestamped local speech search">
 </p>
 
 StreamFetch wraps [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) in a focused
@@ -47,23 +47,73 @@ local library, and play it without sending your collection to a cloud service.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/assets/releases/v1.3.0/new-arrivals.png" alt="StreamFetch new arrivals with selective synchronization"></td>
-    <td width="50%"><img src="docs/assets/releases/v1.3.0/source-settings.png" alt="Per-source download presets, limits, and check intervals"></td>
+    <td width="50%"><img src="docs/assets/releases/v1.6.0/smart-listening.png" alt="Live smart playlists and the expanded floating player"></td>
+    <td width="50%"><img src="docs/assets/releases/v1.6.0/speech-search.png" alt="A local speech search result with a playable timestamp"></td>
   </tr>
   <tr>
-    <td align="center"><strong>Follow your favorite sources</strong><br><sub>Discover new arrivals · choose what to sync · keep a local playlist</sub></td>
-    <td align="center"><strong>Each source, your settings</strong><br><sub>Format presets · batch limits · startup checks · optional schedules</sub></td>
+    <td align="center"><strong>A library that keeps up with you</strong><br><sub>Live playlist rules · watched folders · bookmarks · sleep timer</sub></td>
+    <td align="center"><strong>Find the moment, not just the file</strong><br><sub>Local transcription · subtitle import · click-to-play search results</sub></td>
   </tr>
 </table>
 
 <p align="center">
-  <img src="docs/assets/releases/v1.3.0/sync-history.png" width="820" alt="Persistent source check history showing five initial discoveries and no duplicates on the next check">
+  <img src="docs/assets/releases/v1.6.0/home-player.png" width="330" alt="StreamFetch private home player on a mobile viewport">
   <br>
-  <strong>Know what changed since your last visit</strong><br>
-  <sub>Persistent checks · new-item counts · download results · retryable failures</sub>
+  <strong>Your library. Around the house.</strong><br>
+  <sub>Opt-in home player · pairing code · mobile playback · no cloud account</sub>
 </p>
 
 ## What you get
+
+### Smart Library & Listening — 1.4 milestone
+
+- Persistent smart playlists combining tags, ratings, duration, recency, media type and unplayed status
+- Watched folders indexed in place every 30 seconds while the app runs; no media copies
+- Timestamped bookmarks and embedded chapter navigation with direct playback jumps
+- Playback speeds from 0.75× to 2× and a 15/30/60-minute browser sleep timer
+- Actual title, artist, album and JPEG/PNG cover writing for MP3, WAV, FLAC, Ogg, Opus and MP4/M4A
+- Full original-file backups and explicit restoration; index-only editing remains available
+
+Find these features under **Library → Studio**. Watched folders remain separate
+libraries; use **Open library** to switch between them. Sleep timers pause the
+current browser player, not the computer, and require the player tab to stay open.
+
+### Local Speech Search — 1.5 milestone
+
+- Optional CPU-based, on-device transcription using faster-whisper (`tiny`, `base`, `small`)
+- Background jobs with visible status, cooperative cancellation and retry after interruption
+- SRT/WebVTT import, literal phrase search and timestamped results that jump into the player
+- Export transcripts as plain text or SRT; changed media is marked outdated and excluded from search
+
+Source installs can enable the optional engine with:
+
+```bash
+pip install -e ".[transcription]"
+```
+
+Standalone builds include the engine, but no model. The first model download
+from Hugging Face requires explicit permission and internet access. Once cached,
+transcription works offline. No speech is sent to a transcription service.
+Without the engine, subtitle import and search still work. Long recordings can
+take time on CPU; cancellation takes effect between decoded segments.
+
+### Listen Everywhere at Home — 1.6 milestone
+
+- Separate, read-only mobile player for the single library you choose to share
+- Track/artist/album search, playlists, next/previous, playback speed, resume and sleep timer
+- Audio/video streaming with byte-range support for seeking (browser codec support required)
+- Random pairing code, HttpOnly/SameSite session cookies, 12-hour expiry and login throttling
+- Sharing starts only after confirmation and is off after a full restart
+
+In **Library → Studio → Home player**, start sharing, open the shown address on
+a phone connected to the same Wi-Fi, and enter the code from **Show pairing code**.
+Keep the computer awake and allow the selected port through its local firewall
+if needed. Stop sharing to revoke every connected session.
+
+> [!WARNING]
+> The home player uses **unencrypted HTTP** and is intended only for trusted home
+> networks. Never forward its port to the internet. The administrative Streamlit
+> interface stays on loopback by default. Home-player interface text is currently English.
 
 ### Subscriptions & Smart Sync
 
@@ -192,7 +242,7 @@ the repository's optional signing secrets are configured.
 
 ```bash
 docker build -t streamfetch .
-docker run --rm -p 8501:8501 -v "$PWD/downloads:/app/downloads" streamfetch
+docker run --rm -p 127.0.0.1:8501:8501 -v "$PWD/downloads:/app/downloads" streamfetch
 ```
 
 Browser-cookie extraction is intended for a native local installation. It is
@@ -202,14 +252,17 @@ mounted.
 ## How local storage works
 
 Selecting **Library** indexes the chosen media directory in
-`.streamfetch/library.db`. The database contains only rebuildable metadata and
-player state; the original media remains authoritative. A refresh notices
+`.streamfetch/library.db`. The database contains the metadata index plus your
+collections, listening state and transcripts; preserve it in backups. A refresh notices
 added, changed, moved, or missing files. StreamFetch never deletes your media
 when cleaning the index or reviewing duplicates.
 
-Metadata edits in the app affect the local index, not the underlying media
-file. Favorites, playlists, the queue, paused positions, and up to 5,000 recent
-play actions live in the same local database.
+Standard metadata edits affect only the index. **Studio → File tags** is an
+explicit exception: it writes the real file after creating a full backup in
+`.streamfetch/tag-backups/<id>/`. Restoring replaces the current file with that
+backup. Keep enough free space for both copies and pause playback before editing.
+Favorites, playlists, smart rules, bookmarks, transcripts, the queue, paused
+positions, and up to 5,000 recent play actions live in the library database.
 
 Download jobs are stored separately in `~/.streamfetch/download-jobs.json`.
 Completed and failed jobs return after a restart; interrupted jobs return paused
@@ -226,6 +279,12 @@ Subscription downloads are stored inside each source's selected media folder
 under `Subscriptions/`. Open that folder in Library to play or organize them.
 Removing a source keeps its files and local playlist. Update backups include
 the subscriptions database and the library index for every source folder.
+
+Watched roots are stored in `~/.streamfetch/watched-folders.json`; their library
+databases are also included in pre-update backups. Speech models are cached in
+`~/.streamfetch/models/` and are not copied into update ZIPs. Interrupted speech
+jobs are marked for manual retry, never silently restarted. Sharing credentials
+and sessions exist only in memory and are discarded when sharing stops.
 
 ## Updates and diagnostics
 
@@ -264,13 +323,12 @@ bandwidth and storage. Do not expose it to the internet without authentication,
 quotas, isolation, and storage controls. Please report vulnerabilities through
 [SECURITY.md](SECURITY.md).
 
-## Version 1.3: subscriptions and smart sync
+## Version 1.6: a complete local listening workflow
 
-Version 1.3 gives your sources a permanent home: saved subscriptions,
-new-arrival previews, configurable checks, selective synchronization, persistent
-history, and source-ordered local playlists. See the
-[visual 1.3 release notes](docs/releases/v1.3.0.md) for the implementation tour
-and verification details.
+This release combines the 1.4 listening, 1.5 local search and 1.6 home-player
+milestones. Saved sources and selective sync from 1.3 remain included. See the
+[visual 1.6 release notes](docs/releases/v1.6.0.md) for authentic screenshots,
+upgrade notes and verification details.
 
 ## Contributing
 

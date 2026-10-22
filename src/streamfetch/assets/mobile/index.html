@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Home Player · StreamFetch</title>
+  <link rel="icon" href="/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/player.js" defer></script>
+</head>
+<body>
+  <header>
+    <div class="brand"><img src="/logo.svg" alt="StreamFetch">STREAMFETCH / HOME</div>
+    <form method="post" action="/logout"><button class="subtle">Disconnect</button></form>
+  </header>
+  <main>
+    <p class="eyebrow">LOCAL MUSIC, EVERYWHERE AT HOME</p>
+    <h1>Good things.<br><em>On repeat.</em></h1>
+    <p id="summary">Connecting to your library…</p>
+    <div class="filters">
+      <input id="search" aria-label="Search library" placeholder="Search tracks, artists, albums…">
+      <select id="playlist" aria-label="Playlist"><option value="">All playlists</option></select>
+    </div>
+    <div id="tracks" class="tracks"></div>
+    <p id="status" role="status"></p>
+  </main>
+  <aside class="player" aria-label="Media player">
+    <div class="now"><span class="art">♫</span><div>
+      <strong id="title">Make yourself at home</strong>
+      <span id="artist">Choose a track to begin</span>
+    </div></div>
+    <audio id="audio" controls preload="metadata"></audio>
+    <video id="video" controls playsinline preload="metadata" hidden></video>
+    <div class="controls">
+      <button id="previous" aria-label="Previous track">←</button>
+      <button id="next" aria-label="Next track">Next →</button>
+      <label>Speed <select id="speed"><option>0.75</option><option selected>1</option>
+        <option>1.25</option><option>1.5</option><option>2</option></select></label>
+      <label>Sleep <select id="sleep"><option value="0">Off</option><option value="15">15 min</option>
+        <option value="30">30 min</option><option value="60">60 min</option></select></label>
+    </div>
+  </aside>
+</body>
+</html>
