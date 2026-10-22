@@ -3,6 +3,7 @@ const $=id=>document.getElementById(id);
 let items=[],filtered=[],current=null,mode="here",pc={},timer,busy=false,polling=false,audioContext;
 let switching=false;
 const gains=new WeakMap(),active=()=>current?.media_type==="video"?$("video"):$("audio");
+const gainTracks=new WeakMap();
 const duration=s=>Number.isFinite(s)?`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`:"0:00";
 const message=text=>$("status").textContent=text;
 const stored=(key,value)=>{try{if(value!==undefined)localStorage.setItem(key,value);return localStorage.getItem(key);}catch{return null;}};
@@ -25,7 +26,11 @@ function sound(media){
       source.connect(gain);gain.connect(audioContext.destination);gains.set(media,gain);
     }
     const db=$("normalize").checked?Number(current?.gain_db??0):0;
-    gains.get(media).gain.setTargetAtTime(10**(db/20),audioContext.currentTime,0.05);
+    const parameter=gains.get(media).gain;
+    if(gainTracks.get(media)!==current.id){
+      parameter.cancelScheduledValues(audioContext.currentTime);
+      parameter.setValueAtTime(10**(db/20),audioContext.currentTime);gainTracks.set(media,current.id);
+    }else parameter.setTargetAtTime(10**(db/20),audioContext.currentTime,0.05);
   }catch{message("Loudness matching is unavailable in this browser.");}
 }
 function remember(sync=false){

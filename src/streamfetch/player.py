@@ -394,8 +394,13 @@ export default function(component) {
         state.sources.set(media, source); state.gains.set(media, gain);
       }
       const db = Number(state.track?.gain_db ?? 0);
-      state.gains.get(media)?.gain.setTargetAtTime(10 ** (db / 20),
-        state.audioContext.currentTime, 0.05);
+      state.gainTracks ??= new WeakMap();
+      const parameter = state.gains.get(media)?.gain;
+      if (state.gainTracks.get(media) !== state.track?.path) {
+        parameter.cancelScheduledValues(state.audioContext.currentTime);
+        parameter.setValueAtTime(10 ** (db / 20), state.audioContext.currentTime);
+        state.gainTracks.set(media, state.track?.path);
+      } else parameter.setTargetAtTime(10 ** (db / 20), state.audioContext.currentTime, 0.05);
       return true;
     } catch { status.textContent = "AUDIO MATCHING UNAVAILABLE"; return false; }
   };
@@ -572,6 +577,7 @@ export default function(component) {
     const media = track.media_type === "video" ? video : audio;
     if (oldMedia !== media) oldMedia.pause();
     state.track = track;
+    if (track.gain_db != null || state.sources.has(media)) ensureAudio(media);
     media.playbackRate = Number(data.playback_speed ?? 1);
 
     if (track.media_type === "video") {
