@@ -8,8 +8,29 @@ Only the latest release and current `main` are supported.
 
 The administrative Streamlit interface binds to loopback by default. Do not
 publicly expose it. The optional home player runs on a separate port and shares
-read-only media from one explicitly selected library. It never exposes download,
-settings, filesystem browsing or cookie-extraction endpoints.
+media from one explicitly selected library. It never exposes administrative
+downloads from online sources, settings, filesystem browsing, cookie extraction
+or operating-system command execution.
+
+Since 1.8, paired devices can persist progress for indexed tracks. Computer
+playback control and saving original-file copies are separate explicit permissions,
+both disabled by default and scoped to all paired devices in that sharing session.
+These are not per-device ACLs. Do not pair untrusted devices. Revoking permission
+blocks new requests and pending commands; copies already received cannot be erased.
+Original downloads revalidate containment and use attachment filenames. Stopping
+sharing also interrupts ongoing transfers as the next streaming chunk is sent.
+
+Remote commands affect only an open StreamFetch library player. A ten-second
+controller lease prevents multiple desktop tabs from claiming the same speaker.
+Commands expire after ten seconds, use a bounded queue and require acknowledgements;
+browser-autoplay rejection is reported rather than claimed as a successful handoff.
+The control/progress endpoints require an authenticated session, enforce Host/Origin,
+bound request sizes and finite numeric values, and limit clients to 120 updates/minute.
+Playback position is private library metadata, backed up with its database.
+
+Loudness analysis decodes locally through FFmpeg and stores measurements keyed by
+file size and modification time. Web Audio gain changes playback only; source
+files are never rewritten. No audio is sent to a cloud service for this feature.
 
 Home-player pairing codes are generated for each sharing session. Browser
 sessions use Secure, HttpOnly, SameSite=Strict cookies and expire after 12 hours.

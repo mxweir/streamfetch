@@ -14,9 +14,28 @@
     <form method="post" action="/logout"><button class="subtle">Disconnect</button></form>
   </header>
   <main>
-    <p class="eyebrow">LOCAL MUSIC, EVERYWHERE AT HOME</p>
-    <h1>Good things.<br><em>On repeat.</em></h1>
+    <p class="eyebrow">YOUR LIBRARY. CONNECTED.</p>
+    <h1>One library.<br><em>Your choice.</em></h1>
     <p id="summary">Connecting to your library…</p>
+    <nav class="destinations" aria-label="Playback destination">
+      <button id="here" aria-pressed="true">This device</button>
+      <button id="computer" aria-pressed="false" disabled>Computer speakers</button>
+    </nav>
+    <section class="connection" aria-label="Computer connection">
+      <span class="eyebrow">COMPUTER</span><strong id="pc-title">Connecting…</strong>
+      <p id="pc-status" role="status">Checking permissions…</p>
+      <div class="actions"><button id="takeover" disabled>Continue here</button>
+      <button id="send-pc" disabled>Move playback to computer</button></div>
+    </section>
+    <section id="remote" class="connection" aria-label="Computer playback controls" hidden>
+      <div class="actions"><button id="pc-previous">← Previous</button>
+        <button id="pc-play">Play</button><button id="pc-pause">Pause</button>
+        <button id="pc-next">Next →</button></div>
+      <label>Computer position <input id="pc-seek" type="range" min="0" max="1" value="0" step="1"></label>
+      <label>Computer volume <input id="pc-volume" type="range" min="0" max="1" value="1" step="0.05"></label>
+      <p id="pc-time"></p>
+    </section>
+    <p id="download-note">Original-file downloads require permission from the computer owner.</p>
     <div class="filters">
       <input id="search" aria-label="Search library" placeholder="Search tracks, artists, albums…">
       <select id="playlist" aria-label="Playlist"><option value="">All playlists</option></select>
@@ -24,7 +43,7 @@
     <div id="tracks" class="tracks"></div>
     <p id="status" role="status"></p>
   </main>
-  <aside class="player" aria-label="Media player">
+  <aside id="local-player" class="player" aria-label="Media player" hidden>
     <div class="now"><span class="art">♫</span><div>
       <strong id="title">Make yourself at home</strong>
       <span id="artist">Choose a track to begin</span>
@@ -39,6 +58,9 @@
       <label>Sleep <select id="sleep"><option value="0">Off</option><option value="15">15 min</option>
         <option value="30">30 min</option><option value="60">60 min</option></select></label>
     </div>
+    <div class="sound-options"><label><input id="normalize" type="checkbox" checked> Match loudness</label>
+      <span id="gain-status">Original sound · not analysed yet</span>
+      <a id="save-current" class="subtle" hidden>Save original</a></div>
   </aside>
 </body>
 </html>

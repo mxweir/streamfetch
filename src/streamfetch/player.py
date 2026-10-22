@@ -61,6 +61,7 @@ PLAYER_HTML = """
     <div class="sf-player-footer">
       <label>VOL <input data-volume type="range" min="0" max="1" step="0.05"
                         value="1" aria-label="Volume"></label>
+      <span data-matching aria-live="polite">ORIGINAL</span>
       <button type="button" data-visualizer-toggle
               aria-label="Change visualization">VIS OFF</button>
       <button type="button" data-repeat aria-label="Change repeat mode">REPEAT OFF</button>
@@ -372,6 +373,37 @@ export default function(component) {
   root.__streamfetchState = state;
 
   const activeMedia = () => state.track?.media_type === "video" ? video : audio;
+  const ensureAudio = (media) => {
+    try {
+      state.audioContext ??= new (window.AudioContext || window.webkitAudioContext)();
+      state.audioContext.resume().catch(() => {});
+      if (state.audioContext.state !== "running" && !navigator.userActivation?.hasBeenActive) {
+        return false;
+      }
+      state.analyser ??= state.audioContext.createAnalyser();
+      state.analyser.fftSize = 256;
+      if (!state.analyserConnected) {
+        state.analyser.connect(state.audioContext.destination);
+        state.analyserConnected = true;
+      }
+      state.gains ??= new WeakMap();
+      if (!state.sources.has(media)) {
+        const source = state.audioContext.createMediaElementSource(media);
+        const gain = state.audioContext.createGain();
+        source.connect(gain); gain.connect(state.analyser);
+        state.sources.set(media, source); state.gains.set(media, gain);
+      }
+      const db = Number(state.track?.gain_db ?? 0);
+      state.gainTracks ??= new WeakMap();
+      const parameter = state.gains.get(media)?.gain;
+      if (state.gainTracks.get(media) !== state.track?.path) {
+        parameter.cancelScheduledValues(state.audioContext.currentTime);
+        parameter.setValueAtTime(10 ** (db / 20), state.audioContext.currentTime);
+        state.gainTracks.set(media, state.track?.path);
+      } else parameter.setTargetAtTime(10 ** (db / 20), state.audioContext.currentTime, 0.05);
+      return true;
+    } catch { status.textContent = "AUDIO MATCHING UNAVAILABLE"; return false; }
+  };
   const sleepKey = `sf-sleep-${data.library_key}`;
   if (state.sleepKey !== sleepKey) {
     state.sleepKey = sleepKey;
@@ -492,19 +524,7 @@ export default function(component) {
     visualizerWrap.classList.add("is-visible");
     const media = activeMedia();
     try {
-      state.audioContext ??= new (window.AudioContext || window.webkitAudioContext)();
-      state.analyser ??= state.audioContext.createAnalyser();
-      state.analyser.fftSize = 256;
-      if (!state.analyserConnected) {
-        state.analyser.connect(state.audioContext.destination);
-        state.analyserConnected = true;
-      }
-      if (!state.sources.has(media)) {
-        const source = state.audioContext.createMediaElementSource(media);
-        source.connect(state.analyser);
-        state.sources.set(media, source);
-      }
-      state.audioContext.resume();
+      if (!ensureAudio(media)) return;
     } catch (_error) {
       status.textContent = "VISUALIZER UNAVAILABLE";
       return;
@@ -557,6 +577,7 @@ export default function(component) {
     const media = track.media_type === "video" ? video : audio;
     if (oldMedia !== media) oldMedia.pause();
     state.track = track;
+    if (track.gain_db != null || state.sources.has(media)) ensureAudio(media);
     media.playbackRate = Number(data.playback_speed ?? 1);
 
     if (track.media_type === "video") {
@@ -637,7 +658,13 @@ export default function(component) {
       play.textContent = labels.play;
     }
   };
-  const onPlay = () => syncPlayback();
+  const onPlay = () => {
+    state.remoteBlocked = false;
+    if (state.track?.gain_db != null || state.sources.has(activeMedia())) {
+      ensureAudio(activeMedia());
+    }
+    syncPlayback();
+  };
   const onPause = () => syncPlayback();
   const onTime = () => {
     syncProgress();
@@ -670,6 +697,7 @@ export default function(component) {
       state.restoring = false;
     }
     syncProgress();
+    applyRemote();
   };
 
   for (const media of [audio, video]) {
@@ -727,6 +755,37 @@ export default function(component) {
     }
   };
   seek.onchange = () => emit("position", { position: activeMedia().currentTime });
+  const telemetry = (type="telemetry", details={}) => emit(type, {
+    path: state.track?.path, position: activeMedia().currentTime || 0,
+    paused: activeMedia().paused, volume: activeMedia().volume,
+    blocked: Boolean(state.remoteBlocked), ...details,
+  });
+  const applyRemote = () => {
+    const command = data.remote_command;
+    if (!command || state.remoteNonce === command.nonce || activeMedia().readyState < 1) return;
+    state.remoteNonce = command.nonce;
+    const media = activeMedia();
+    state.remoteBlocked = false;
+    if (command.position != null) media.currentTime = Math.min(command.position,
+      Number.isFinite(media.duration) ? media.duration : command.position);
+    if (command.volume != null) {volume.value=String(command.volume); media.volume=command.volume;}
+    if (command.action === "pause") media.pause();
+    if (command.action === "play") {
+      media.play().then(() => {
+        state.remoteBlocked = state.audioContext?.state === "suspended";
+        telemetry("remote_ack", {ack:command.nonce});
+      }).catch(() => {
+        state.remoteBlocked = true; status.textContent = "PRESS PLAY ON THIS COMPUTER";
+        telemetry("remote_ack", {ack:command.nonce});
+      });
+    } else telemetry("remote_ack", {ack:command.nonce});
+  };
+  state.telemetry = telemetry;
+  state.telemetryTimer ??= setInterval(() => {
+    if (!root.isConnected) {
+      clearInterval(state.telemetryTimer); state.telemetryTimer = null;
+    } else state.telemetry();
+  }, 3000);
   volume.oninput = () => {
     audio.volume = Number(volume.value);
     video.volume = Number(volume.value);
@@ -758,8 +817,14 @@ export default function(component) {
     syncPlayback();
   }
   activeMedia().playbackRate = Number(data.playback_speed ?? 1);
+  root.querySelector("[data-matching]").textContent = state.track?.gain_db == null
+    ? "ORIGINAL" : `MATCH ${Number(state.track.gain_db).toFixed(1)} dB`;
   if (activeMedia().readyState >= 1) onLoaded();
   if (data.autoplay && sameTrack) activeMedia().play().catch(() => {});
+  applyRemote();
+  if (!activeMedia().paused && (state.track?.gain_db != null || state.sources.has(activeMedia()))) {
+    ensureAudio(activeMedia());
+  }
 
   renderQueue();
   root.classList.toggle("is-expanded", state.expanded);

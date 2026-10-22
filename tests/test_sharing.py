@@ -207,3 +207,72 @@ def test_pair_script_scrubs_fragment_before_request(player):
     script = request(player, "GET", "/pair.js")[2].decode()
     assert script.index("history.replaceState") < script.index("fetch(")
     assert "new URLSearchParams({token})" in script
+
+
+def post_json(player, route, payload, cookie):
+    return request(
+        player,
+        "POST",
+        route,
+        json.dumps(payload),
+        {
+            **cookie,
+            "Content-Type": "application/json",
+            "Origin": f"https://127.0.0.1:{player.port}",
+        },
+    )
+
+
+def test_remote_and_downloads_are_separate_explicit_permissions(player):
+    cookie = login(player)
+    item = player.items()[0]
+    assert request(player, "GET", "/download/" + item["id"])[0] == 303
+    assert request(player, "GET", "/download/" + item["id"], headers=cookie)[0] == 403
+    assert post_json(player, "/api/control", {"action": "play"}, cookie)[0] == 403
+    player.allow_downloads = True
+    status, headers, body = request(player, "GET", "/download/" + item["id"], headers=cookie)
+    assert status == 200 and body == b"0123456789"
+    assert headers["Content-Disposition"].startswith("attachment; filename*=UTF-8''")
+    assert "track.mp3" in headers["Content-Disposition"]
+    player.allow_downloads = False
+    assert request(player, "GET", "/download/" + item["id"], headers=cookie)[0] == 403
+    state = json.loads(request(player, "GET", "/api/playback", headers=cookie)[2])
+    assert state == dict(remote_allowed=False, downloads_allowed=False, online=False)
+
+
+def test_remote_commands_and_state_never_expose_filesystem_paths(player):
+    cookie = login(player)
+    player.allow_remote = True
+    item = player.library.list_items()[0]
+    player.hub.publish("pc", item.path, position=2, paused=False)
+    status, _, body = post_json(
+        player,
+        "/api/control",
+        {"action": "seek", "item": player.identifier(item.path), "position": 5},
+        cookie,
+    )
+    assert status == 202
+    nonce = json.loads(body)["command"]
+    command = player.hub.take("pc")
+    assert command["position"] == 5
+    player.hub.publish("pc", item.path, position=5, paused=False, ack=nonce)
+    status, _, body = request(player, "GET", "/api/playback", headers=cookie)
+    assert status == 200 and str(item.path).encode() not in body
+    assert json.loads(body)["results"][nonce] == "applied"
+    assert post_json(player, "/api/control", {"action": "shell"}, cookie)[0] == 400
+    assert post_json(player, "/api/control", {"action": "volume", "volume": 10}, cookie)[0] == 400
+    assert (
+        post_json(player, "/api/control", {"action": "play", "item": "../secret"}, cookie)[0] == 400
+    )
+    assert post_json(player, "/api/control", {"action": "pause"}, {})[0] == 401
+
+
+def test_phone_progress_is_persistent_but_requires_a_valid_track(player):
+    cookie = login(player)
+    item = player.items()[0]
+    assert post_json(player, "/api/progress", {"item": item["id"], "position": 3}, cookie)[0] == 200
+    assert player.items()[0]["resume"] == 3
+    assert (
+        post_json(player, "/api/progress", {"item": item["id"], "position": -1}, cookie)[0] == 400
+    )
+    assert post_json(player, "/api/progress", {"position": 1}, cookie)[0] == 400
