@@ -97,22 +97,32 @@ transcription works offline. No speech is sent to a transcription service.
 Without the engine, subtitle import and search still work. Long recordings can
 take time on CPU; cancellation takes effect between decoded segments.
 
-### Listen Everywhere at Home — 1.6 milestone
+### Listen Everywhere at Home — encrypted in 1.7
 
 - Separate, read-only mobile player for the single library you choose to share
 - Track/artist/album search, playlists, next/previous, playback speed, resume and sleep timer
 - Audio/video streaming with byte-range support for seeking (browser codec support required)
-- Random pairing code, HttpOnly/SameSite session cookies, 12-hour expiry and login throttling
+- TLS 1.2+ encryption, one-use QR pairing, Secure/HttpOnly/SameSite cookies and 12-hour sessions
 - Sharing starts only after confirmation and is off after a full restart
 
-In **Library → Studio → Home player**, start sharing, open the shown address on
-a phone connected to the same Wi-Fi, and enter the code from **Show pairing code**.
+In **Library → Studio → Home player**, prepare and download your installation's
+public certificate. Transfer it privately to your phone (AirDrop/USB), install it
+and enable SSL trust once. Verify the SHA-256 fingerprint shown on your computer.
+On [iPhone](https://support.apple.com/en-gb/102390), enable it under Settings →
+General → About → Certificate Trust Settings. On Android, use the device's
+Security settings to install a CA certificate; menus and browser policies vary.
+Then start sharing and generate a QR code. Scan it with your phone on the same
+Wi-Fi: no StreamFetch password to type. Codes expire after two minutes, work
+once, and are revoked when replaced. A manual HTTPS pairing code remains available.
 Keep the computer awake and allow the selected port through its local firewall
 if needed. Stop sharing to revoke every connected session.
 
 > [!WARNING]
-> The home player uses **unencrypted HTTP** and is intended only for trusted home
-> networks. Never forward its port to the internet. The administrative Streamlit
+> The home player requires **HTTPS**, with no plaintext fallback. Do not bypass
+> browser certificate warnings. Installing a CA is a trust decision: install only
+> your own certificate, protect the private identity, and remove trust when no longer
+> needed. A phone unlock PIN may still be required during setup. Use only trusted home
+> networks; never forward its port to the internet. The administrative Streamlit
 > interface stays on loopback by default. Home-player interface text is currently English.
 
 ### Subscriptions & Smart Sync
@@ -323,7 +333,16 @@ bandwidth and storage. Do not expose it to the internet without authentication,
 quotas, isolation, and storage controls. Please report vulnerabilities through
 [SECURITY.md](SECURITY.md).
 
-## Version 1.6: a complete local listening workflow
+## Version 1.7: encrypted, passwordless home listening
+
+![Actual HTTPS and QR setup in StreamFetch](docs/assets/releases/v1.7.0/home-setup.png)
+
+[Visual 1.7 release notes](docs/releases/v1.7.0.md): encrypted media transport,
+installation-local certificates and short-lived, one-use QR access. Certificates
+survive app updates; media and library data need no migration. Phone certificate
+trust is a one-time manual setup, not silently changed by StreamFetch.
+
+### Previously in 1.6
 
 This release combines the 1.4 listening, 1.5 local search and 1.6 home-player
 milestones. Saved sources and selective sync from 1.3 remain included. See the

@@ -11,6 +11,23 @@ from collections.abc import Mapping
 LANGUAGES = {"English": "en", "Deutsch": "de"}
 
 STUDIO_GERMAN = {
+    "QR code replaced in another window. Generate a new one.": "QR-Code in einem anderen Fenster ersetzt. Erzeuge einen neuen.",
+    "HTTPS only. Trust your installation's certificate on your phone once, then scan a one-use QR code. No StreamFetch password required.": "Nur HTTPS. Vertraue dem Zertifikat deiner Installation einmalig am Handy. Danach genügt ein Einmal-QR-Code – ohne StreamFetch-Passwort.",
+    "Home Wi-Fi only. Never forward this port to the internet. Keep your computer awake; stop sharing to revoke all sessions.": "Nur im Heimnetz verwenden, niemals ins Internet freigeben. Der Computer muss wach bleiben. Freigabe stoppen widerruft alle Sitzungen.",
+    "1 · Set up certificate trust on your phone": "1 · Zertifikat am Handy einrichten",
+    "Trust only the certificate downloaded from your own StreamFetch. Never share the private home-tls identity file.": "Vertraue nur dem Zertifikat deiner eigenen StreamFetch-Installation. Die private home-tls-Identitätsdatei niemals teilen.",
+    "Prepare certificate": "Zertifikat vorbereiten",
+    "Download public certificate": "Öffentliches Zertifikat herunterladen",
+    "Transfer the certificate privately (AirDrop/USB), install it, then enable SSL trust. On iPhone: Settings → General → About → Certificate Trust Settings. On Android: Settings → Security → Install certificate → CA certificate (names vary by device). Your device may require its unlock PIN.": "Übertrage das Zertifikat privat (AirDrop/USB), installiere es und aktiviere das SSL-Vertrauen. iPhone: Einstellungen → Allgemein → Info → Zertifikatsvertrauenseinstellungen. Android: Einstellungen → Sicherheit → Zertifikat installieren → CA-Zertifikat (Bezeichnungen variieren). Die Geräte-PIN kann erforderlich sein.",
+    "Never bypass a browser certificate warning. Check the SHA-256 fingerprint against this computer. Updates preserve the certificate.": "Browser-Zertifikatswarnungen niemals umgehen. Vergleiche den SHA-256-Fingerabdruck mit diesem Computer. Updates behalten das Zertifikat bei.",
+    "Optional manual fallback over HTTPS. Sessions expire after 12 hours. Stop sharing to disconnect every device.": "Optionaler manueller Zugang über HTTPS. Sitzungen enden nach zwölf Stunden. Freigabe stoppen trennt alle Geräte.",
+    "Computer's Wi-Fi IPv4 address": "WLAN-IPv4-Adresse dieses Computers",
+    "2 · Scan and listen": "2 · Scannen und loshören",
+    "Generate one-use QR code": "Einmal-QR-Code erzeugen",
+    "Phone connected. This QR code is now invalid.": "Handy verbunden. Dieser QR-Code ist jetzt ungültig.",
+    "QR code expired. Generate a new one.": "QR-Code abgelaufen. Erzeuge einen neuen.",
+    "One scan only · expires in {seconds}s": "Nur ein Scan · läuft in {seconds}s ab",
+    "The QR code is a temporary access key. Do not share or screenshot it.": "Der QR-Code ist ein temporärer Zugangsschlüssel. Nicht teilen oder abfotografieren.",
     "Show pairing code": "Kopplungscode anzeigen",
     "Quick bookmark": "Schnelles Lesezeichen",
     "Your library, elevated.": "Mehr aus deiner Mediathek.",
