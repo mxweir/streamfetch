@@ -16,7 +16,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from streamfetch.home_tls import HomeIdentity, validate_address
 from streamfetch.library import MediaLibrary
+from streamfetch.settings import default_state_dir
 
 ASSETS = Path(__file__).parent / "assets" / "mobile"
 
@@ -49,21 +51,43 @@ def byte_range(header, size):
 
 
 class HomePlayer:
-    def __init__(self, library: MediaLibrary, *, host="0.0.0.0", port=8767):
+    def __init__(self, library: MediaLibrary, *, identity, host="0.0.0.0", port=8767, address=None):
         self.library = library
         self.secret = secrets.token_urlsafe(18)
         self._key = secrets.token_bytes(32)
         self._sessions = {}
         self._attempts = {}
         self._lock = threading.RLock()
-        self.address = local_address()
-        self._allowed_hosts = {self.address, "127.0.0.1", "localhost", socket.gethostname()}
+        self.address = validate_address(address or local_address())
+        # Reject an interface that does not belong to this computer before issuing its certificate.
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind((self.address, 0))
+        self.identity = identity
+        self.instance_id = secrets.token_hex(16)
+        self.pair_generation = 0
+        self._pair_digest = None
+        self.pair_expires = 0
+        self.pair_used = False
+        self._allowed_hosts = {self.address, "127.0.0.1", "localhost"}
+        context = identity.context(self.address)
         owner = self
+
+        class TLSServer(ThreadingHTTPServer):
+            def get_request(self):
+                connection, client = super().get_request()
+                connection.settimeout(15)
+                return context.wrap_socket(
+                    connection, server_side=True, do_handshake_on_connect=False
+                ), client
+
+            def handle_error(self, request, client_address):
+                pass  # Invalid TLS requests must not log user data.
 
         class Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
 
             def setup(self):
+                self.request.do_handshake()
                 super().setup()
                 self.connection.settimeout(15)
 
@@ -127,12 +151,14 @@ class HomePlayer:
                         )
                     self.respond(200, logo.read_bytes(), "image/svg+xml")
                     return
-                if route == "/login":
+                if route in {"/login", "/pair"}:
                     self.respond(
-                        200, (ASSETS / "login.html").read_bytes(), "text/html; charset=utf-8"
+                        200,
+                        (ASSETS / ("pair.html" if route == "/pair" else "login.html")).read_bytes(),
+                        "text/html; charset=utf-8",
                     )
                     return
-                if route in {"/style.css", "/player.js"}:
+                if route in {"/style.css", "/player.js", "/pair.js"}:
                     self.respond(
                         200,
                         (ASSETS / route[1:]).read_bytes(),
@@ -204,7 +230,7 @@ class HomePlayer:
                 origin = self.headers.get("Origin")
                 if (
                     not self.valid_host()
-                    or (origin and origin != f"http://{self.headers.get('Host')}")
+                    or (origin and origin != f"https://{self.headers.get('Host')}")
                     or self.headers.get("Sec-Fetch-Site") == "cross-site"
                 ):
                     self.respond(403)
@@ -220,11 +246,11 @@ class HomePlayer:
                         headers={
                             "Location": "/login",
                             "Set-Cookie": "streamfetch_session=; Path=/; HttpOnly; "
-                            "SameSite=Strict; Max-Age=0",
+                            "Secure; SameSite=Strict; Max-Age=0",
                         },
                     )
                     return
-                if route != "/login":
+                if route not in {"/login", "/pair"}:
                     self.respond(404)
                     return
                 try:
@@ -253,8 +279,19 @@ class HomePlayer:
                         return
                     attempts.append(now)
                     owner._attempts[self.client_address[0]] = attempts
-                    supplied = form.get("secret", [""])[0]
-                    if not hmac.compare_digest(supplied.encode(), owner.secret.encode()):
+                    supplied = form.get("token" if route == "/pair" else "secret", [""])[0]
+                    valid = (
+                        (
+                            owner._pair_digest is not None
+                            and owner.pair_expires > now
+                            and hmac.compare_digest(
+                                hashlib.sha256(supplied.encode()).digest(), owner._pair_digest
+                            )
+                        )
+                        if route == "/pair"
+                        else hmac.compare_digest(supplied.encode(), owner.secret.encode())
+                    )
+                    if not valid:
                         self.respond(403, b"Incorrect pairing code. Return to /login to retry.")
                         return
                     owner._sessions = {
@@ -265,16 +302,19 @@ class HomePlayer:
                         return
                     token = secrets.token_urlsafe(32)
                     owner._sessions[token] = now + 43200
+                    if route == "/pair":
+                        owner._pair_digest = None
+                        owner.pair_used = True
                 self.respond(
-                    303,
+                    200 if route == "/pair" else 303,
                     headers={
                         "Location": "/",
                         "Set-Cookie": f"streamfetch_session={token}; Path=/; HttpOnly; "
-                        "SameSite=Strict; Max-Age=43200",
+                        "Secure; SameSite=Strict; Max-Age=43200",
                     },
                 )
 
-        self._server = ThreadingHTTPServer((host, int(port)), Handler)
+        self._server = TLSServer((host, int(port)), Handler)
         self._server.daemon_threads = True
         self.port = self._server.server_port
         self._thread = threading.Thread(
@@ -284,7 +324,19 @@ class HomePlayer:
 
     @property
     def url(self):
-        return f"http://{self.address}:{self.port}"
+        return f"https://{self.address}:{self.port}"
+
+    def pairing_url(self):
+        return self.pairing_grant()[0]
+
+    def pairing_grant(self):
+        with self._lock:
+            token = secrets.token_urlsafe(32)
+            self._pair_digest = hashlib.sha256(token.encode()).digest()
+            self.pair_expires = time.time() + 120
+            self.pair_used = False
+            self.pair_generation += 1
+            return f"{self.url}/pair#{token}", self.pair_generation
 
     def identifier(self, path):
         return hmac.new(
@@ -320,6 +372,7 @@ class HomePlayer:
     def stop(self):
         with self._lock:
             self._sessions.clear()
+            self._pair_digest = None
         self._server.shutdown()
         self._server.server_close()
         self._thread.join(timeout=2)
@@ -330,11 +383,13 @@ class SharingService:
         self.player = None
         self._lock = threading.RLock()
 
-    def start(self, library, port):
+    def start(self, library, port, address=None):
         with self._lock:
             if self.player:
                 raise ValueError("Stop the existing sharing session first.")
-            self.player = HomePlayer(library, port=port)
+            self.player = HomePlayer(
+                library, identity=HomeIdentity(default_state_dir()), port=port, address=address
+            )
 
     def stop(self):
         with self._lock:

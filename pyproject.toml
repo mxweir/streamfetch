@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "streamfetch"
-version = "1.6.1"
+version = "1.7.0"
 description = "Local-first media downloader, library and player for YouTube and SoundCloud"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,6 +20,8 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
+  "cryptography>=46,<52",
+  "qrcode>=8.2,<9",
   "mutagen>=1.47,<2",
   "packaging>=24,<27",
   "Pillow>=11,<13",

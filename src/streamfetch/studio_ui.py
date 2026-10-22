@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import io
 import subprocess
+import time
 from pathlib import Path
 from uuid import uuid4
 
+import qrcode
 import streamlit as st
 
 from streamfetch.file_metadata import file_backups, restore_file_backup, write_file_metadata
+from streamfetch.home_tls import HomeIdentity
 from streamfetch.listening import FolderWatcher, ListeningLibrary, read_chapters
 from streamfetch.settings import default_state_dir
-from streamfetch.sharing import SharingService
+from streamfetch.sharing import SharingService, local_address
 from streamfetch.transcripts import (
     TranscriptionService,
     TranscriptStore,
@@ -344,33 +348,101 @@ def render_sharing(library, t):
             "computer are never exposed. Sharing is off after every full app restart."
         )
     )
-    st.warning(
+    st.info(
         t(
-            "Trusted home Wi-Fi only: HTTP is not encrypted. Do not expose the port to the "
-            "internet. Your computer must stay awake. Stop sharing to revoke all sessions."
+            "HTTPS only. Trust your installation's certificate on your phone once, then scan "
+            "a one-use QR code. No StreamFetch password required."
         )
     )
+    st.caption(
+        t(
+            "Home Wi-Fi only. Never forward this port to the internet. "
+            "Keep your computer awake; stop sharing to revoke all sessions."
+        )
+    )
+    with st.expander(t("1 · Set up certificate trust on your phone")):
+        st.warning(
+            t(
+                "Trust only the certificate downloaded from your own StreamFetch. "
+                "Never share the private home-tls identity file."
+            )
+        )
+        if st.button(t("Prepare certificate")):
+            st.session_state.home_certificate_ready = True
+        if st.session_state.get("home_certificate_ready") or service.player:
+            identity = (
+                service.player.identity if service.player else HomeIdentity(default_state_dir())
+            )
+            st.download_button(
+                t("Download public certificate"),
+                identity.public_certificate,
+                "streamfetch-home.cer",
+                "application/pkix-cert",
+            )
+            st.caption("SHA-256")
+            st.code(identity.fingerprint, language=None)
+        st.markdown(
+            t(
+                "Transfer the certificate privately (AirDrop/USB), install it, then enable "
+                "SSL trust. On iPhone: Settings → General → About → Certificate Trust "
+                "Settings. On Android: Settings → Security → Install certificate → CA "
+                "certificate (names vary by device). Your device may require its unlock PIN."
+            )
+        )
+        st.markdown("[Apple: certificate trust](https://support.apple.com/en-gb/102390)")
+        st.caption(
+            t(
+                "Never bypass a browser certificate warning. Check the SHA-256 fingerprint "
+                "against this computer. Updates preserve the certificate."
+            )
+        )
     if service.player:
         player = service.player
         st.success(t("Sharing is active"))
         st.code(player.url, language=None)
         st.caption(t("Shared library: {path}", path=player.library.root))
+        render_pairing(player, t)
         with st.popover(t("Show pairing code")):
             st.code(player.secret, language=None)
         st.caption(
             t(
-                "Open this address on your phone, then enter the pairing code. "
-                "Sessions expire after 12 hours. A new sharing session creates a new code."
+                "Optional manual fallback over HTTPS. Sessions expire after 12 hours. "
+                "Stop sharing to disconnect every device."
             )
         )
         if player.address == "127.0.0.1":
             st.info(t("LAN address could not be detected. Use your computer's Wi-Fi IPv4 address."))
         if st.button(t("Stop sharing and revoke sessions"), type="primary"):
             service.stop()
+            st.session_state.pop("home_qr", None)
             st.rerun()
     else:
         port = st.number_input(t("Home player port"), 1024, 65535, 8767)
+        address = st.text_input(t("Computer's Wi-Fi IPv4 address"), local_address())
         confirmed = st.checkbox(t("Share only this library on my trusted home network."))
         if st.button(t("Start home player"), disabled=not confirmed, type="primary"):
-            service.start(library, port)
+            service.start(library, port, address=address)
             st.rerun()
+
+
+@st.fragment(run_every="2s")
+def render_pairing(player, t):
+    st.markdown(f"#### {t('2 · Scan and listen')}")
+    if st.button(t("Generate one-use QR code")):
+        url, generation = player.pairing_grant()
+        output = io.BytesIO()
+        qrcode.make(url).save(output, format="PNG")
+        st.session_state.home_qr = (player.instance_id, generation, output.getvalue())
+    qr = st.session_state.get("home_qr")
+    if qr and qr[0] == player.instance_id:
+        remaining = max(0, int(player.pair_expires - time.time()))
+        if qr[1] != player.pair_generation:
+            st.warning(t("QR code replaced in another window. Generate a new one."))
+        elif player.pair_used:
+            st.success(t("Phone connected. This QR code is now invalid."))
+        elif not remaining:
+            st.warning(t("QR code expired. Generate a new one."))
+        else:
+            st.image(qr[2], width=260)
+            st.caption(t("One scan only · expires in {seconds}s", seconds=remaining))
+    st.caption(t("The QR code is a temporary access key. Do not share or screenshot it."))

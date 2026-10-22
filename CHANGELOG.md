@@ -4,6 +4,21 @@ Every StreamFetch release is documented with the same visual format: a short
 summary, an authentic product image, user-visible changes, upgrade notes, and
 verification details. Full visual notes live in [`docs/releases`](docs/releases).
 
+## [1.7.0] — Scan. Connect. Listen securely.
+
+_Released 2026-10-22 · [Full visual release notes](docs/releases/v1.7.0.md)_
+
+![Actual HTTPS certificate setup](docs/assets/releases/v1.7.0/home-setup.png)
+
+### Highlights
+
+- HTTPS-only home player with persistent installation-local certificates.
+- Passwordless one-use QR pairing, two-minute expiry and replay protection.
+- Secure twelve-hour sessions; stopping sharing disconnects every device.
+- Certificate download, SHA-256 verification and explicit phone trust instructions.
+- No automatic trust-store changes, no plaintext fallback, no media migration.
+- Real TLS/authentication/streaming tests and updated security documentation.
+
 ## [1.6.1] — Clean desktop shutdown
 
 _Released 2026-10-22 · [Full visual release notes](docs/releases/v1.6.1.md)_
