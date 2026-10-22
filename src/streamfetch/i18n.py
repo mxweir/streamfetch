@@ -11,6 +11,18 @@ from collections.abc import Mapping
 LANGUAGES = {"English": "en", "Deutsch": "de"}
 
 STUDIO_GERMAN = {
+    "Listen here, continue on your phone, or control computer speakers. You decide whether paired devices may control playback or save originals. Sharing starts off.": "Hier hören, am Handy fortsetzen oder die PC-Boxen steuern. Du entscheidest, ob gekoppelte Geräte die Wiedergabe steuern oder Originale speichern dürfen. Die Freigabe startet deaktiviert.",
+    "Allow computer playback control": "PC-Wiedergabe fernsteuern erlauben",
+    "Allow original-file downloads": "Originaldateien herunterladen erlauben",
+    "Your home. Your permissions.": "Dein Heimnetz. Deine Freigaben.",
+    "Listening is included. Computer control and saving original files are separate permissions for every paired device in this sharing session.": "Hören ist inklusive. PC-Steuerung und Original-Downloads sind getrennte Freigaben für alle gekoppelten Geräte dieser Sitzung.",
+    "Downloads are independent copies: stopping sharing cannot delete them. Computer control requires this library to stay open; press play once if your browser blocks audio.": "Downloads sind unabhängige Kopien und werden beim Stoppen der Freigabe nicht gelöscht. Für die PC-Steuerung muss diese Mediathek geöffnet bleiben. Bei blockiertem Audio einmal am PC auf Play klicken.",
+    "Consistent volume · original files untouched": "Gleichmäßige Lautstärke · Originale bleiben unverändert",
+    "Match track loudness": "Track-Lautstärke angleichen",
+    "Analyse locally with FFmpeg, then match playback to −18 LUFS with true-peak headroom. No re-encoding. Unanalysed tracks play unchanged. Extreme recordings may remain quieter to avoid clipping.": "Lokal mit FFmpeg analysieren, dann die Wiedergabe auf −18 LUFS mit True-Peak-Reserve angleichen. Ohne Neukodierung. Nicht analysierte Tracks bleiben unverändert. Extreme Aufnahmen bleiben gegebenenfalls leiser, um Übersteuerung zu vermeiden.",
+    "Stop after current track": "Nach aktuellem Track stoppen",
+    "Analyse library loudness": "Lautstärke der Mediathek analysieren",
+    "{count} analysed · {failed} failed": "{count} analysiert · {failed} fehlgeschlagen",
     "QR code replaced in another window. Generate a new one.": "QR-Code in einem anderen Fenster ersetzt. Erzeuge einen neuen.",
     "HTTPS only. Trust your installation's certificate on your phone once, then scan a one-use QR code. No StreamFetch password required.": "Nur HTTPS. Vertraue dem Zertifikat deiner Installation einmalig am Handy. Danach genügt ein Einmal-QR-Code – ohne StreamFetch-Passwort.",
     "Home Wi-Fi only. Never forward this port to the internet. Keep your computer awake; stop sharing to revoke all sessions.": "Nur im Heimnetz verwenden, niemals ins Internet freigeben. Der Computer muss wach bleiben. Freigabe stoppen widerruft alle Sitzungen.",

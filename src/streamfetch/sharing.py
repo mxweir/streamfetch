@@ -14,10 +14,12 @@ import time
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
+from streamfetch.connected import bounded_number, playback_hub
 from streamfetch.home_tls import HomeIdentity, validate_address
 from streamfetch.library import MediaLibrary
+from streamfetch.loudness import loudness_service
 from streamfetch.settings import default_state_dir
 
 ASSETS = Path(__file__).parent / "assets" / "mobile"
@@ -51,8 +53,24 @@ def byte_range(header, size):
 
 
 class HomePlayer:
-    def __init__(self, library: MediaLibrary, *, identity, host="0.0.0.0", port=8767, address=None):
+    def __init__(
+        self,
+        library: MediaLibrary,
+        *,
+        identity,
+        host="0.0.0.0",
+        port=8767,
+        address=None,
+        allow_remote=False,
+        allow_downloads=False,
+    ):
         self.library = library
+        self.allow_remote = allow_remote
+        self.allow_downloads = allow_downloads
+        self.hub = playback_hub(library.root)
+        self.loudness = loudness_service(library.root)
+        self._control_attempts = {}
+        self._stopped = False
         self.secret = secrets.token_urlsafe(18)
         self._key = secrets.token_bytes(32)
         self._sessions = {}
@@ -175,20 +193,34 @@ class HomePlayer:
                 elif route == "/api/library":
                     items = owner.items()
                     self.respond(200, json.dumps(items).encode(), "application/json")
+                elif route == "/api/playback":
+                    snapshot = owner.hub.snapshot()
+                    path = snapshot.pop("path", None)
+                    try:
+                        snapshot["item"] = owner.identifier(Path(path)) if path else None
+                    except ValueError:
+                        snapshot["item"] = None
+                    snapshot["remote_allowed"] = owner.allow_remote
+                    snapshot["downloads_allowed"] = owner.allow_downloads
+                    if not owner.allow_remote:
+                        snapshot = dict(
+                            remote_allowed=False,
+                            downloads_allowed=owner.allow_downloads,
+                            online=False,
+                        )
+                    self.respond(200, json.dumps(snapshot).encode(), "application/json")
                 elif route.startswith("/media/"):
                     self.stream(route.removeprefix("/media/"))
+                elif route.startswith("/download/"):
+                    if not owner.allow_downloads:
+                        self.respond(403, b"Downloads are not enabled by the computer owner.")
+                        return
+                    self.stream(route.removeprefix("/download/"), download=True)
                 else:
                     self.respond(404)
 
-            def stream(self, identifier):
-                item = None
-                for candidate in owner.library.list_items(limit=100000):
-                    try:
-                        if owner.identifier(candidate.path) == identifier:
-                            item = candidate
-                            break
-                    except ValueError:
-                        continue
+            def stream(self, identifier, download=False):
+                item = owner.find_item(identifier)
                 if item is None:
                     self.respond(404)
                     return
@@ -211,6 +243,11 @@ class HomePlayer:
                         self.send_header("Accept-Ranges", "bytes")
                         self.send_header("Cache-Control", "private, no-store")
                         self.send_header("X-Content-Type-Options", "nosniff")
+                        if download:
+                            self.send_header(
+                                "Content-Disposition",
+                                "attachment; filename*=UTF-8''" + quote(item.path.name, safe=""),
+                            )
                         if partial:
                             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
                         self.end_headers()
@@ -218,6 +255,9 @@ class HomePlayer:
                             return
                         media.seek(start)
                         while length:
+                            if owner._stopped or (download and not owner.allow_downloads):
+                                self.close_connection = True
+                                break
                             chunk = media.read(min(length, 256 * 1024))
                             if not chunk:
                                 break
@@ -236,6 +276,65 @@ class HomePlayer:
                     self.respond(403)
                     return
                 route = urlsplit(self.path).path
+                if route in {"/api/control", "/api/progress"}:
+                    if not self.authenticated():
+                        self.respond(401)
+                        return
+                    if route == "/api/control" and not owner.allow_remote:
+                        self.respond(403, b"Computer control is disabled.")
+                        return
+                    try:
+                        length = int(self.headers.get("Content-Length", "0"))
+                        if not 0 < length <= 4096:
+                            self.close_connection = True
+                            self.respond(413)
+                            return
+                        with owner._lock:
+                            now = time.monotonic()
+                            attempts = [
+                                stamp
+                                for stamp in owner._control_attempts.get(self.client_address[0], [])
+                                if stamp > now - 60
+                            ]
+                            if len(attempts) >= 120:
+                                self.respond(429)
+                                return
+                            owner._control_attempts[self.client_address[0]] = [*attempts, now]
+                        payload = json.loads(self.rfile.read(length))
+                        if not isinstance(payload, dict):
+                            raise ValueError("Expected an object")
+                        item = owner.find_item(payload.get("item")) if payload.get("item") else None
+                        if payload.get("item") and item is None:
+                            raise ValueError("Track is no longer available.")
+                        position = payload.get("position")
+                        if position is not None:
+                            position = bounded_number(position, 0, 864000)
+                            if item and item.duration_seconds:
+                                position = min(position, item.duration_seconds)
+                        if route == "/api/progress":
+                            if item is None or position is None:
+                                raise ValueError("Track and position are required.")
+                            owner.library.set_playback_position(item.path, position)
+                            self.respond(200, b"{}", "application/json")
+                            return
+                        with owner._lock:
+                            if not owner.allow_remote or owner._stopped:
+                                self.respond(403)
+                                return
+                            command = owner.hub.send(
+                                payload.get("action"),
+                                path=str(item.path) if item else None,
+                                position=position,
+                                volume=payload.get("volume"),
+                            )
+                        self.respond(
+                            202, json.dumps({"command": command}).encode(), "application/json"
+                        )
+                    except (ValueError, TypeError) as error:
+                        self.respond(
+                            400, json.dumps({"error": str(error)}).encode(), "application/json"
+                        )
+                    return
                 if route == "/logout":
                     cookie = SimpleCookie(self.headers.get("Cookie", ""))
                     with owner._lock:
@@ -343,6 +442,15 @@ class HomePlayer:
             self._key, self.library.relative_path(path).encode(), hashlib.sha256
         ).hexdigest()[:32]
 
+    def find_item(self, identifier):
+        for item in self.library.list_items(limit=100000):
+            try:
+                if self.identifier(item.path) == identifier and item.path.is_file():
+                    return item
+            except (OSError, ValueError):
+                continue
+        return None
+
     def items(self):
         memberships = {}
         for playlist in self.library.playlists():
@@ -365,17 +473,30 @@ class HomePlayer:
                     media_type=item.media_type,
                     duration=item.duration_seconds,
                     playlists=memberships.get(str(item.path), []),
+                    resume=self.library.playback_position(item.path),
+                    gain_db=self.loudness.gain(item)
+                    if self.library.player_setting("normalize", "off") == "on"
+                    else None,
                 )
             )
         return result
 
     def stop(self):
         with self._lock:
+            self._stopped = True
             self._sessions.clear()
             self._pair_digest = None
+            self.hub.revoke()
         self._server.shutdown()
         self._server.server_close()
         self._thread.join(timeout=2)
+
+    def set_permissions(self, remote, downloads):
+        with self._lock:
+            self.allow_remote = bool(remote)
+            self.allow_downloads = bool(downloads)
+            if not self.allow_remote:
+                self.hub.revoke()
 
 
 class SharingService:
@@ -383,12 +504,17 @@ class SharingService:
         self.player = None
         self._lock = threading.RLock()
 
-    def start(self, library, port, address=None):
+    def start(self, library, port, address=None, allow_remote=False, allow_downloads=False):
         with self._lock:
             if self.player:
                 raise ValueError("Stop the existing sharing session first.")
             self.player = HomePlayer(
-                library, identity=HomeIdentity(default_state_dir()), port=port, address=address
+                library,
+                identity=HomeIdentity(default_state_dir()),
+                port=port,
+                address=address,
+                allow_remote=allow_remote,
+                allow_downloads=allow_downloads,
             )
 
     def stop(self):

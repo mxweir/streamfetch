@@ -9,6 +9,7 @@ import sqlite3
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 import streamlit as st
 
@@ -20,6 +21,7 @@ from streamfetch.config import (
     parse_urls,
     validate_request,
 )
+from streamfetch.connected import playback_hub
 from streamfetch.downloader import (
     Downloader,
     DownloaderError,
@@ -30,6 +32,7 @@ from streamfetch.i18n import LANGUAGES, default_language, player_labels, transla
 from streamfetch.jobs import DownloadJobManager, JobStatus, default_job_state_path
 from streamfetch.library import MediaItem, MediaLibrary, Playlist
 from streamfetch.listening import ListeningLibrary
+from streamfetch.loudness import loudness_service
 from streamfetch.models import DownloadRequest, MediaType
 from streamfetch.player import build_player_data, render_continuous_player
 from streamfetch.settings import AppSettings, default_state_dir, load_settings, save_settings
@@ -91,6 +94,7 @@ def persist_language() -> None:
 def section_label(text: str) -> str:
     return f'<div class="sf-section-label">{html.escape(t(text))}</div>'
 
+
 def render_header() -> None:
     st.markdown(APP_CSS, unsafe_allow_html=True)
     st.markdown(hero_html(t), unsafe_allow_html=True)
@@ -99,9 +103,7 @@ def render_header() -> None:
 
 def current_health_checks(*, force: bool = False):
     if force or "health_checks" not in st.session_state:
-        output = Path(
-            st.session_state.get("output_dir", st.session_state.app_settings.media_dir)
-        )
+        output = Path(st.session_state.get("output_dir", st.session_state.app_settings.media_dir))
         st.session_state.health_checks = run_health_checks(output)
     return st.session_state.health_checks
 
@@ -202,9 +204,7 @@ def render_first_run_dialog() -> None:
         index=list(LANGUAGES).index(st.session_state.ui_language),
         key="setup_language",
     )
-    suggested_media_dir = (
-        st.session_state.app_settings.download_dir or "~/Downloads/StreamFetch"
-    )
+    suggested_media_dir = st.session_state.app_settings.download_dir or "~/Downloads/StreamFetch"
     media_dir = st.text_input(
         t("Media folder"),
         value=suggested_media_dir,
@@ -358,10 +358,7 @@ def build_request(urls: tuple[str, ...]) -> DownloadRequest:
     embed_thumbnail = st.session_state.embed_thumbnail and not (
         media_type is MediaType.AUDIO and container == "wav"
     )
-    if (
-        st.session_state.use_clip_range
-        and st.session_state.clip_end <= st.session_state.clip_start
-    ):
+    if st.session_state.use_clip_range and st.session_state.clip_end <= st.session_state.clip_start:
         raise ValidationError("The clip end must be after its start.")
     request = DownloadRequest(
         urls=urls,
@@ -522,8 +519,7 @@ def render_download_sidebar() -> None:
                 ["None", "Chrome", "Firefox", "Edge", "Safari", "Brave"],
                 key="cookie_browser",
                 help=(
-                    "Useful for age-restricted or signed-in content. "
-                    "Cookies stay on this computer."
+                    "Useful for age-restricted or signed-in content. Cookies stay on this computer."
                 ),
             )
             st.slider(
@@ -607,9 +603,9 @@ def render_system_view() -> None:
     st.markdown(section_label("System"), unsafe_allow_html=True)
     st.markdown(
         '<div class="sf-view-heading">'
-        f'<h2>{html.escape(t("System health"))}</h2>'
-        f'<p>{html.escape(t("Dependencies, safe updates, and privacy-friendly diagnostics."))}</p>'
-        '</div>',
+        f"<h2>{html.escape(t('System health'))}</h2>"
+        f"<p>{html.escape(t('Dependencies, safe updates, and privacy-friendly diagnostics.'))}</p>"
+        "</div>",
         unsafe_allow_html=True,
     )
 
@@ -761,9 +757,9 @@ def render_download_view() -> None:
 
     st.markdown(
         '<div class="sf-view-heading">'
-        f'<h2>{html.escape(t("Download studio"))}</h2>'
-        f'<p>{html.escape(download_description)}</p>'
-        '</div>',
+        f"<h2>{html.escape(t('Download studio'))}</h2>"
+        f"<p>{html.escape(download_description)}</p>"
+        "</div>",
         unsafe_allow_html=True,
     )
 
@@ -784,9 +780,7 @@ def render_download_view() -> None:
         if "soundcloud.com" in raw_urls.lower() or "snd.sc/" in raw_urls.lower():
             st.info(t("SoundCloud sources are audio-only. Select **Audio** in the sidebar."))
         accepted = st.checkbox(
-            t(
-                "I have permission to download these items and accept responsibility for their use."
-            )
+            t("I have permission to download these items and accept responsibility for their use.")
         )
 
         analyze_col, download_col, _ = st.columns([1, 1, 2])
@@ -850,9 +844,9 @@ def render_library_view() -> None:
     st.markdown(section_label("Local library"), unsafe_allow_html=True)
     st.markdown(
         '<div class="sf-view-heading">'
-        f'<h2>{html.escape(t("Your library"))}</h2>'
-        f'<p>{html.escape(t("Everything downloaded, imported, organized, and ready to play."))}</p>'
-        '</div>',
+        f"<h2>{html.escape(t('Your library'))}</h2>"
+        f"<p>{html.escape(t('Everything downloaded, imported, organized, and ready to play.'))}</p>"
+        "</div>",
         unsafe_allow_html=True,
     )
     refresh_col, path_col = st.columns([1, 3])
@@ -863,10 +857,9 @@ def render_library_view() -> None:
     )
     path_col.caption(t("Watching {path}", path=root))
 
-    scan_needed = (
-        not library.database_path.exists()
-        or st.session_state.get("library_scanned_root") != str(root)
-    )
+    scan_needed = not library.database_path.exists() or st.session_state.get(
+        "library_scanned_root"
+    ) != str(root)
     try:
         if scan_needed or refresh_clicked:
             with st.spinner(t("Scanning local media…")):
@@ -892,16 +885,16 @@ def render_library_view() -> None:
     st.markdown(
         '<div class="sf-stats">'
         f'<div class="sf-stat"><span>{html.escape(t("Items"))}</span>'
-        f'<strong>{stats.total}</strong></div>'
+        f"<strong>{stats.total}</strong></div>"
         f'<div class="sf-stat"><span>{html.escape(t("Audio"))}</span>'
-        f'<strong>{stats.audio}</strong></div>'
+        f"<strong>{stats.audio}</strong></div>"
         f'<div class="sf-stat"><span>{html.escape(t("Video"))}</span>'
-        f'<strong>{stats.video}</strong></div>'
+        f"<strong>{stats.video}</strong></div>"
         f'<div class="sf-stat"><span>{html.escape(t("Artists"))}</span>'
-        f'<strong>{stats.artists}</strong></div>'
+        f"<strong>{stats.artists}</strong></div>"
         f'<div class="sf-stat"><span>{html.escape(t("Storage"))}</span>'
-        f'<strong>{human_size(stats.size_bytes)}</strong></div>'
-        '</div>',
+        f"<strong>{human_size(stats.size_bytes)}</strong></div>"
+        "</div>",
         unsafe_allow_html=True,
     )
 
@@ -1146,10 +1139,7 @@ def render_metadata_editor(library: MediaLibrary, item: MediaItem, item_key: str
 def render_library_import(library: MediaLibrary) -> None:
     with st.expander(t("Import a local media folder")):
         st.caption(
-            t(
-                "Supported audio and video files are copied into Imported/ while "
-                "preserving folders."
-            )
+            t("Supported audio and video files are copied into Imported/ while preserving folders.")
         )
         source = st.text_input(
             t("Folder to import"),
@@ -1289,7 +1279,37 @@ def select_media(library: MediaLibrary, item: MediaItem) -> None:
     st.rerun()
 
 
+@st.fragment
 def render_player(library: MediaLibrary) -> None:
+    hub = playback_hub(library.root)
+    owner = st.session_state.setdefault("desktop_owner", uuid4().hex)
+    command = hub.take(owner)
+    if command:
+        if command.get("path"):
+            item = library.item_for_path(command["path"])
+            if item and item.path.is_file():
+                library.set_current_item(item.path)
+        elif command["action"] in {"next", "previous"}:
+            current = library.current_item()
+            item = (
+                library.take_queue_entry()
+                if command["action"] == "next"
+                else library.previous_item(current.path)
+                if current
+                else None
+            )
+            if item:
+                library.set_current_item(item.path)
+            else:
+                available = library.list_items(limit=100000)
+                if available:
+                    index = next((i for i, entry in enumerate(available)
+                                  if current and entry.path == current.path), 0)
+                    offset = 1 if command["action"] == "next" else -1
+                    library.set_current_item(available[(index + offset) % len(available)].path)
+            command = {**command, "action": "play", "position": 0}
+        st.session_state.desktop_command = command
+        st.session_state.desktop_command_root = str(library.root)
     current = library.current_item()
     queue = library.queue()
     if current is None:
@@ -1318,6 +1338,16 @@ def render_player(library: MediaLibrary) -> None:
         seek_request=st.session_state.get("player_seek_request"),
         library_key=str(library.root),
     )
+    player_data["remote_command"] = st.session_state.get("desktop_command") if (
+        st.session_state.get("desktop_command_root") == str(library.root)) else None
+    player_data["current"]["gain_db"] = (
+        loudness_service(library.root).gain(current)
+        if (library.player_setting("normalize", "off") == "on")
+        else None
+    )
+    if queue and player_data["next"]:
+        player_data["next"]["gain_db"] = loudness_service(library.root).gain(queue[0].item) if (
+            library.player_setting("normalize", "off") == "on") else None
     result = render_continuous_player(player_data)
     handle_player_action(library, result, previous)
 
@@ -1332,6 +1362,24 @@ def handle_player_action(library: MediaLibrary, result, previous: MediaItem | No
     st.session_state.processed_player_action = nonce
 
     action_type = action.get("type")
+    if action_type in {"telemetry", "remote_ack"}:
+        item = library.item_for_path(action.get("path", ""))
+        if item:
+            hub = playback_hub(library.root)
+            before = hub.snapshot()
+            published = hub.publish(
+                st.session_state.desktop_owner,
+                item.path,
+                position=action.get("position", 0),
+                paused=action.get("paused", True),
+                volume=action.get("volume", 1),
+                blocked=action.get("blocked", False),
+                ack=action.get("ack"),
+            )
+            if published and (not action.get("paused", True) or
+                              before.get("paused") is False or action.get("ack")):
+                library.set_playback_position(item.path, float(action.get("position", 0)))
+        return
     if action_type == "speed" and action.get("speed") in {0.75, 1, 1.25, 1.5, 2}:
         library.set_player_setting("speed", str(action["speed"]))
         st.rerun()
@@ -1562,13 +1610,13 @@ def selected_download_urls(raw_urls: str) -> tuple[str, ...]:
     selections: dict[str, tuple[str, ...]] = {}
     for url in urls:
         preview = next((item for item in previews if item.source_url == url), None)
-        selectable = tuple(
-            entry.webpage_url for entry in preview.entries if entry.webpage_url
-        ) if preview else ()
+        selectable = (
+            tuple(entry.webpage_url for entry in preview.entries if entry.webpage_url)
+            if preview
+            else ()
+        )
         if selectable:
-            selections[url] = tuple(
-                st.session_state.get(preview_selection_key(url), selectable)
-            )
+            selections[url] = tuple(st.session_state.get(preview_selection_key(url), selectable))
     unique = resolve_selected_urls(urls, previews, selections)
     if not unique:
         raise ValidationError("Select at least one item from the analyzed collection.")
@@ -1603,9 +1651,7 @@ def enqueue_download(raw_urls: str, manager: DownloadJobManager) -> None:
         st.error(t(str(exc)))
         return
     if shutil.which("ffmpeg") is None:
-        st.error(
-            t("FFmpeg was not found. Install FFmpeg and restart the app before downloading.")
-        )
+        st.error(t("FFmpeg was not found. Install FFmpeg and restart the app before downloading."))
         return
     job_ids = manager.submit(request)
     st.success(t("Queued {count} background download job(s).", count=len(job_ids)))

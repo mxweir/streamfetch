@@ -4,6 +4,21 @@ Every StreamFetch release is documented with the same visual format: a short
 summary, an authentic product image, user-visible changes, upgrade notes, and
 verification details. Full visual notes live in [`docs/releases`](docs/releases).
 
+## [1.8.0] — One library. Connected listening.
+
+_Released 2026-10-22 · [Full visual release notes](docs/releases/v1.8.0.md)_
+
+![Real desktop controls and device permissions](docs/assets/releases/v1.8.0/device-permissions.png)
+
+### Highlights
+
+- Continue on your phone or move the current track and position to computer speakers.
+- Control computer playback, seeking and player volume from a paired device.
+- Separate, default-off permissions for remote control and original-file downloads.
+- Local EBU R128 loudness analysis and non-destructive playback matching.
+- Clear playback destinations, connection feedback and autoplay guidance.
+- Preserve media, certificate identity, positions, collections and original file bytes.
+
 ## [1.7.0] — Scan. Connect. Listen securely.
 
 _Released 2026-10-22 · [Full visual release notes](docs/releases/v1.7.0.md)_

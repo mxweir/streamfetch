@@ -14,6 +14,7 @@ import streamlit as st
 from streamfetch.file_metadata import file_backups, restore_file_backup, write_file_metadata
 from streamfetch.home_tls import HomeIdentity
 from streamfetch.listening import FolderWatcher, ListeningLibrary, read_chapters
+from streamfetch.loudness import loudness_service
 from streamfetch.settings import default_state_dir
 from streamfetch.sharing import SharingService, local_address
 from streamfetch.transcripts import (
@@ -140,6 +141,7 @@ def render_smart(library, t, render_grid):
 
 
 def render_listening(library, t):
+    render_matching(library, t)
     st.caption(t("Playback speed, sleep timer and quick bookmarks live in the floating player."))
     item = choose_item(library, "listen_item", t)
     if not item:
@@ -344,8 +346,8 @@ def render_sharing(library, t):
     st.markdown(f"### {t('Your library. Around the house.')}")
     st.caption(
         t(
-            "A separate, read-only mobile player. Downloads, settings and the rest of your "
-            "computer are never exposed. Sharing is off after every full app restart."
+            "Listen here, continue on your phone, or control computer speakers. You decide "
+            "whether paired devices may control playback or save originals. Sharing starts off."
         )
     )
     st.info(
@@ -399,6 +401,21 @@ def render_sharing(library, t):
     if service.player:
         player = service.player
         st.success(t("Sharing is active"))
+        remote, downloads = st.columns(2)
+        remote_enabled = remote.toggle(
+            t("Allow computer playback control"), value=player.allow_remote
+        )
+        downloads_enabled = downloads.toggle(
+            t("Allow original-file downloads"), value=player.allow_downloads
+        )
+        player.set_permissions(remote_enabled, downloads_enabled)
+        st.caption(
+            t(
+                "Downloads are independent copies: stopping sharing cannot delete them. "
+                "Computer control requires this library to stay open; press play once "
+                "if your browser blocks audio."
+            )
+        )
         st.code(player.url, language=None)
         st.caption(t("Shared library: {path}", path=player.library.root))
         render_pairing(player, t)
@@ -417,12 +434,59 @@ def render_sharing(library, t):
             st.session_state.pop("home_qr", None)
             st.rerun()
     else:
+        st.markdown(f"#### {t('Your home. Your permissions.')}")
+        st.caption(
+            t(
+                "Listening is included. Computer control and saving original files are "
+                "separate permissions for every paired device in this sharing session."
+            )
+        )
+        remote = st.checkbox(t("Allow computer playback control"))
+        downloads = st.checkbox(t("Allow original-file downloads"))
         port = st.number_input(t("Home player port"), 1024, 65535, 8767)
         address = st.text_input(t("Computer's Wi-Fi IPv4 address"), local_address())
         confirmed = st.checkbox(t("Share only this library on my trusted home network."))
         if st.button(t("Start home player"), disabled=not confirmed, type="primary"):
-            service.start(library, port, address=address)
+            service.start(
+                library, port, address=address, allow_remote=remote, allow_downloads=downloads
+            )
             st.rerun()
+
+
+@st.fragment(run_every="3s")
+def render_matching(library, t):
+    service = loudness_service(library.root)
+    with st.expander(t("Consistent volume · original files untouched")):
+        enabled = st.toggle(
+            t("Match track loudness"), value=library.player_setting("normalize", "off") == "on"
+        )
+        library.set_player_setting("normalize", "on" if enabled else "off")
+        st.caption(
+            t(
+                "Analyse locally with FFmpeg, then match playback to −18 LUFS with "
+                "true-peak headroom. No re-encoding. Unanalysed tracks play unchanged. "
+                "Extreme recordings may remain quieter to avoid clipping."
+            )
+        )
+        if service.running:
+            st.progress(
+                service.completed / max(1, service.total),
+                text=f"{service.completed} / {service.total}",
+            )
+            if st.button(t("Stop after current track")):
+                service.cancel.set()
+        else:
+            if st.button(t("Analyse library loudness")):
+                service.start()
+                st.rerun(scope="fragment")
+            if service.total:
+                st.caption(
+                    t(
+                        "{count} analysed · {failed} failed",
+                        count=service.completed,
+                        failed=service.failed,
+                    )
+                )
 
 
 @st.fragment(run_every="2s")

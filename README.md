@@ -97,9 +97,27 @@ transcription works offline. No speech is sent to a transcription service.
 Without the engine, subtitle import and search still work. Long recordings can
 take time on CPU; cancellation takes effect between decoded segments.
 
-### Listen Everywhere at Home — encrypted in 1.7
+### Connected listening — 1.8
 
-- Separate, read-only mobile player for the single library you choose to share
+- **Continue here:** transfer the computer's current track and confirmed position to your phone.
+- **Computer speakers:** control play/pause, next/previous, seeking and player volume remotely.
+- **Move playback to computer:** continue a phone track on the PC after its acknowledgement.
+- **Save originals:** download individual files to a paired device, when explicitly allowed.
+- **Match loudness:** locally analyse audio in Studio → Listening; playback gain targets
+  −18 LUFS with measured peak headroom. Originals and downloaded copies stay untouched.
+
+Computer control and original-file downloads are independent opt-in permissions in
+**Library → Studio → Home player**. Both start off; listening remains available.
+Keep the PC's library tab open and click play once if its browser blocks audio.
+Handoffs are acknowledged, not synchronised multi-room playback. Downloaded copies
+cannot be revoked; open them in your device's files/music app for offline listening.
+The web interface itself still needs the computer. Phone autoplay and codec support vary.
+
+![Explicit device permissions in the real app](docs/assets/releases/v1.8.0/device-permissions.png)
+
+### Encrypted home access — introduced in 1.7
+
+- Separate mobile player for the single library you choose to share
 - Track/artist/album search, playlists, next/previous, playback speed, resume and sleep timer
 - Audio/video streaming with byte-range support for seeking (browser codec support required)
 - TLS 1.2+ encryption, one-use QR pairing, Secure/HttpOnly/SameSite cookies and 12-hour sessions
@@ -333,7 +351,14 @@ bandwidth and storage. Do not expose it to the internet without authentication,
 quotas, isolation, and storage controls. Please report vulnerabilities through
 [SECURITY.md](SECURITY.md).
 
-## Version 1.7: encrypted, passwordless home listening
+## Version 1.8: one library, connected listening
+
+[Visual 1.8 release notes](docs/releases/v1.8.0.md): acknowledged track/position
+handoffs, optional computer-speaker control and original-file downloads, plus
+non-destructive volume matching. See the notes for browser limitations and
+what was verified on real services versus the isolated mobile UI fixture.
+
+### Previously in 1.7: encrypted, passwordless home listening
 
 ![Actual HTTPS and QR setup in StreamFetch](docs/assets/releases/v1.7.0/home-setup.png)
 
