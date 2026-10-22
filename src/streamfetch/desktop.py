@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import multiprocessing
 import os
+import signal
 import socket
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+from contextlib import suppress
 from pathlib import Path
 
 
@@ -82,6 +84,39 @@ def run_frozen_server(port: int) -> int:
     return 0
 
 
+def stop_server(process: subprocess.Popen, *, system: str | None = None) -> None:
+    """Stop only the launcher's owned server tree, including native speech helpers."""
+    if (system or sys.platform) == "win32":
+        taskkill = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32/taskkill.exe"
+        try:
+            subprocess.run(
+                [str(taskkill), "/PID", str(process.pid), "/T", "/F"],
+                check=False,
+                capture_output=True,
+                timeout=5,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            process.kill()
+    else:
+        # Popen starts this server in its own session; never signal the launcher's group.
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGTERM)
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        finally:
+            # The bootloader can exit before its native helper processes do.
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
 def main() -> int:
     """Run StreamFetch in a native pywebview window."""
 
@@ -113,6 +148,7 @@ def main() -> int:
         command,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
+        start_new_session=os.name == "posix",
     )
     try:
         wait_for_server(url, process=process)
@@ -126,11 +162,7 @@ def main() -> int:
         )
         webview.start()
     finally:
-        process.terminate()
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
+        stop_server(process)
     return 0
 
 

@@ -4,6 +4,20 @@ Every StreamFetch release is documented with the same visual format: a short
 summary, an authentic product image, user-visible changes, upgrade notes, and
 verification details. Full visual notes live in [`docs/releases`](docs/releases).
 
+## [1.6.1] — Clean desktop shutdown
+
+_Released 2026-10-22 · [Full visual release notes](docs/releases/v1.6.1.md)_
+
+![The unchanged 1.6 listening and search interface](docs/assets/releases/v1.6.0/product-tour.gif)
+
+### Fixed
+
+- Close the launcher's owned server process group on macOS/Linux, including
+  native speech helpers that otherwise survive their main process.
+- Target only the owned server process tree on Windows, using the system executable.
+- Cover graceful and forced helper cleanup with unit and real process-tree tests.
+- No UI changes or data migration; all 1.6 features remain included.
+
 ## [1.6.0] — Your library, elevated
 
 _Released 2026-10-22 · [Full visual release notes](docs/releases/v1.6.0.md)_
@@ -149,5 +163,6 @@ _Released 2026-10-20 · [Full visual release notes](docs/releases/v1.0.0.md)_
 [1.0.0]: https://github.com/mxweir/streamfetch/releases/tag/v1.0.0
 [1.1.0]: https://github.com/mxweir/streamfetch/releases/tag/v1.1.0
 [1.2.0]: https://github.com/mxweir/streamfetch/releases/tag/v1.2.0
+[1.6.1]: https://github.com/mxweir/streamfetch/releases/tag/v1.6.1
 [1.6.0]: https://github.com/mxweir/streamfetch/releases/tag/v1.6.0
 [1.3.0]: https://github.com/mxweir/streamfetch/releases/tag/v1.3.0

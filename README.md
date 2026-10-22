@@ -330,6 +330,9 @@ milestones. Saved sources and selective sync from 1.3 remain included. See the
 [visual 1.6 release notes](docs/releases/v1.6.0.md) for authentic screenshots,
 upgrade notes and verification details.
 
+The [1.6.1 desktop patch](docs/releases/v1.6.1.md) also cleans up the owned server
+and native speech helpers when the desktop window closes. No data migration is needed.
+
 ## Contributing
 
 Issues and focused pull requests are welcome. Start with
