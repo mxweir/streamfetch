@@ -84,7 +84,16 @@ def test_build_audio_options_adds_extractor():
     assert options["format"] == "bestaudio/best"
     assert extractor["key"] == "FFmpegExtractAudio"
     assert extractor["preferredcodec"] == "mp3"
-    assert extractor["preferredquality"] == "192K"
+    assert extractor["preferredquality"] == "192"
+
+
+@pytest.mark.parametrize("quality,expected", [
+    ("0", "0"), ("128K", "128"), ("192K", "192"), ("256K", "256"), ("320K", "320"),
+])
+def test_audio_quality_is_normalized_for_python_api(quality, expected):
+    options = build_ydl_options(make_request(media_type=MediaType.AUDIO, container="mp3",
+                                            quality=quality, embed_thumbnail=False))
+    assert options["postprocessors"][0]["preferredquality"] == expected
 
 
 def test_soundcloud_audio_options_are_supported():

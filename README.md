@@ -65,6 +65,25 @@ local library, and play it without sending your collection to a cloud service.
 
 ## What you get
 
+### Your presets. Clearer downloads. — New in 1.9
+
+Save your own download setups and get concrete help when a source fails.
+The download engine now updates independently of StreamFetch releases.
+
+![Personal preset and a real completed YouTube MP3 download](docs/assets/releases/v1.9.0/presets-download.png)
+
+- Up to 30 named presets for format, quality, metadata and advanced settings;
+  no saved links, output paths or browser-cookie selections.
+- Actionable errors with original technical details, common-secret redaction,
+  and automatic job retries only for recognised temporary failures.
+- Correct MP3 bitrate selection: a real 192K download is verified at 192,000 bit/s,
+  rather than silently falling back to 128 kbit/s.
+- SHA-256-verified stable yt-dlp updates, matching EJS resources and an explicit
+  JavaScript runtime configuration, including frozen desktop builds.
+
+[Full visual 1.9 release notes](docs/releases/v1.9.0.md) ·
+[Download the latest release](https://github.com/mxweir/streamfetch/releases/latest)
+
 ### Smart Library & Listening — 1.4 milestone
 
 - Persistent smart playlists combining tags, ratings, duration, recency, media type and unplayed status
@@ -242,8 +261,18 @@ format, confirm permission, and start the download. Files are saved to
 `~/Downloads/StreamFetch` by default and organized by uploader and collection.
 
 > [!TIP]
-> Keep `yt-dlp` current. Some YouTube formats can also require a JavaScript
-> runtime supported by yt-dlp.
+> StreamFetch checks PyPI for stable `yt-dlp` updates at startup and before
+> downloads (six-hour cache), independently of app releases. Verified pure-Python
+> wheels, matching EJS scripts and current CA certificates are stored in
+> `~/.streamfetch/engines/`; no system pip, admin access or desktop rebuild is
+> required. Updates are activated before the engine is imported. If it is already
+> loaded, restart the whole app to activate the prepared version safely.
+> Offline/failed checks keep the existing engine and show a warning; retry checks
+> are throttled to 15 minutes. System → Updates also offers a manual check.
+> New releases requiring an unsupported Python or mandatory dependency need an app
+> update. Media, library data and settings are never modified by engine updates.
+> Installed Node.js, Deno and QuickJS runtimes are explicitly enabled for YouTube.
+> JavaScript runtimes themselves must still be installed/updated separately.
 
 ## Native desktop app
 

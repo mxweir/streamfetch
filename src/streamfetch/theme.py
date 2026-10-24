@@ -1,5 +1,7 @@
 """Premium StreamFetch visual system for the Streamlit interface."""
 
+from streamfetch import __version__
+
 APP_CSS = """
 <style>
 :root {
@@ -422,6 +424,21 @@ p, label, [data-testid="stMarkdownContainer"] { color: inherit; }
     box-shadow: none !important;
 }
 [data-testid="stAlert"] { color: var(--sf-ink); }
+[data-testid="stSidebar"] [data-testid="stExpander"] {
+    background: #25212e !important;
+    border-color: #54485f !important;
+}
+[data-testid="stSidebar"] [data-testid="stExpander"] summary {
+    background: #352c45 !important;
+    color: #f9f7ff !important;
+}
+[data-testid="stSidebar"] button[kind="secondary"] p {
+    color: var(--sf-ink) !important;
+}
+[data-testid="stSidebar"] button:disabled p { color: #77727c !important; }
+[data-testid="stSidebar"] .stRadio [role="radiogroup"] {
+    background: #29262f;
+}
 [data-testid="stProgressBar"] > div > div { background: var(--sf-violet) !important; }
 [data-testid="stDataFrame"] { overflow: hidden; border-radius: 16px; }
 hr { border-color: rgba(23,21,28,.13) !important; }
@@ -487,7 +504,7 @@ def hero_html(translate=lambda text: text) -> str:
 <header class="sf-appbar">
     <div class="sf-appbar__brand">
         <span class="sf-logo">{LOGO_SVG}</span>
-        <div><strong>StreamFetch</strong><br><small>Local media studio · 1.8</small></div>
+        <div><strong>StreamFetch</strong><br><small>Local media studio · {__version__}</small></div>
     </div>
     <div class="sf-appbar__status">
         <span class="sf-status-dot"></span><small>{translate("Private on this device")}</small>

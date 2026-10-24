@@ -18,3 +18,11 @@ def test_hero_and_legal_copy_remain_accessible():
     assert "YouTube" in HERO_HTML
     assert "SoundCloud" in HERO_HTML
     assert "permission to download" in LEGAL_HTML
+
+
+def test_sidebar_presets_keep_text_contrast_and_current_version():
+    from streamfetch import __version__
+
+    assert __version__ in HERO_HTML
+    assert '[data-testid="stSidebar"] button[kind="secondary"] p' in APP_CSS
+    assert "background: #25212e !important" in APP_CSS

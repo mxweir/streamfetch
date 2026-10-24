@@ -13,6 +13,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from streamfetch.download_errors import classify_download_error
 from streamfetch.downloader import Downloader
 from streamfetch.models import DownloadRequest, DownloadResult, MediaType, ProgressEvent
 
@@ -219,7 +220,8 @@ class DownloadJobManager:
                     job.status = JobStatus.PAUSED
                     job.message = "Paused — resume to continue the partial download"
                     job.error = None
-                elif job.attempt <= len(self._retry_delays):
+                elif (classify_download_error(str(exc)).retryable
+                      and job.attempt <= len(self._retry_delays)):
                     delay = self._retry_delays[job.attempt - 1]
                     job.status = JobStatus.QUEUED
                     job.message = f"Retrying automatically in {delay:g}s"

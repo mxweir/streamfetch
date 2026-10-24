@@ -142,7 +142,7 @@ def create_pre_update_backup(
     backup_path = backup_dir / f"before-{target_version}-{int(time.time())}.zip"
     with zipfile.ZipFile(backup_path, "w", zipfile.ZIP_DEFLATED) as archive:
         for filename in ("settings.json", "download-jobs.json", "update-cache.json",
-                         "watched-folders.json"):
+                         "watched-folders.json", "download-presets.json"):
             path = state_dir / filename
             if path.is_file():
                 archive.write(path, f"state/{filename}")
