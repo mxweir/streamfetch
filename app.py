@@ -22,12 +22,14 @@ from streamfetch.config import (
     validate_request,
 )
 from streamfetch.connected import playback_hub
+from streamfetch.download_errors import classify_download_error, safe_error_detail
 from streamfetch.downloader import (
     Downloader,
     DownloaderError,
     estimate_download_bytes,
     resolve_selected_urls,
 )
+from streamfetch.engine_updates import engine_status, ensure_engine
 from streamfetch.i18n import LANGUAGES, default_language, player_labels, translate
 from streamfetch.jobs import DownloadJobManager, JobStatus, default_job_state_path
 from streamfetch.library import MediaItem, MediaLibrary, Playlist
@@ -35,6 +37,7 @@ from streamfetch.listening import ListeningLibrary
 from streamfetch.loudness import loudness_service
 from streamfetch.models import DownloadRequest, MediaType
 from streamfetch.player import build_player_data, render_continuous_player
+from streamfetch.presets import PresetStore
 from streamfetch.settings import AppSettings, default_state_dir, load_settings, save_settings
 from streamfetch.studio_ui import folder_watcher, render_studio
 from streamfetch.subscription_ui import render_subscriptions
@@ -127,6 +130,7 @@ def check_for_updates(*, force: bool = False) -> ReleaseInfo | None:
 
 
 def initialize_startup_services() -> None:
+    ensure_engine()
     current_health_checks()
     get_subscription_service()
     settings = st.session_state.app_settings
@@ -152,6 +156,12 @@ def open_system_workspace() -> None:
 
 
 def render_startup_notices() -> None:
+    engine = engine_status()
+    if engine.error:
+        st.warning(t(engine.error))
+    if engine.pending_version:
+        st.info(t("yt-dlp {version} is ready. Restart StreamFetch to activate it safely.",
+                  version=engine.pending_version))
     missing = [
         check
         for check in current_health_checks()
@@ -427,8 +437,37 @@ DOWNLOAD_PRESETS = {
 
 def apply_download_preset() -> None:
     preset = st.session_state.get("download_preset")
-    for key, value in DOWNLOAD_PRESETS.get(preset, {}).items():
+    options = (PresetStore().load().get(preset.removeprefix("saved:"), {})
+               if preset and preset.startswith("saved:") else DOWNLOAD_PRESETS.get(preset, {}))
+    for key, value in options.items():
         st.session_state[key] = value
+
+
+def save_user_preset() -> None:
+    try:
+        name = st.session_state.get("preset_name", "").strip()
+        PresetStore().save(name, dict(st.session_state))
+        st.session_state.download_preset = f"saved:{name}"
+        st.session_state.preset_notice = (
+            "Preset saved. Your paths and browser cookies are excluded."
+        )
+    except (ValueError, OSError) as exc:
+        st.session_state.preset_notice = str(exc)
+
+
+def delete_user_preset() -> None:
+    selected = st.session_state.get("download_preset", "")
+    if selected.startswith("saved:"):
+        try:
+            PresetStore().delete(selected.removeprefix("saved:"))
+            st.session_state.download_preset = "Custom"
+            st.session_state.preset_notice = (
+                "Preset deleted. Current download settings are unchanged."
+            )
+        except OSError:
+            st.session_state.preset_notice = (
+                "The preset could not be saved. Check folder permissions."
+            )
 
 
 def render_download_sidebar() -> None:
@@ -436,15 +475,31 @@ def render_download_sidebar() -> None:
         st.markdown(sidebar_header_html(t), unsafe_allow_html=True)
         render_language_picker()
         preset_col, apply_col = st.columns([2, 1])
+        saved_presets = PresetStore().load()
+        preset_choices = ["Custom", *DOWNLOAD_PRESETS, *(f"saved:{name}" for name in saved_presets)]
+        if st.session_state.get("download_preset", "Custom") not in preset_choices:
+            st.session_state.download_preset = "Custom"
         preset_col.selectbox(
             t("Preset"),
-            ["Custom", *DOWNLOAD_PRESETS],
-            format_func=t,
+            preset_choices,
+            format_func=lambda name: f"★ {name.removeprefix('saved:')}"
+            if name.startswith("saved:") else t(name),
             key="download_preset",
         )
         if apply_col.button(t("Apply"), key="apply_download_preset", width="stretch"):
             apply_download_preset()
             st.rerun()
+        with st.expander(t("My download presets")):
+            st.caption(t(
+                "Save the current format and options. Links, folders and cookies stay out."
+            ))
+            st.text_input(t("Preset name"), max_chars=48, key="preset_name")
+            st.button(t("Save / update preset"), on_click=save_user_preset, width="stretch")
+            st.button(t("Delete selected preset"), on_click=delete_user_preset,
+                      disabled=not st.session_state.download_preset.startswith("saved:"),
+                      width="stretch")
+            if st.session_state.get("preset_notice"):
+                st.caption(t(st.session_state.preset_notice))
         st.radio(
             t("Media type"),
             ["video", "audio"],
@@ -595,7 +650,9 @@ def render_system_sidebar() -> None:
         st.markdown(system_sidebar_html(t), unsafe_allow_html=True)
         render_language_picker()
         st.caption(t("StreamFetch {version}", version=__version__))
-        st.caption(t("All checks run locally except the optional GitHub release check."))
+        st.caption(t(
+            "Engine updates use PyPI. App update checks use GitHub. Other checks are local."
+        ))
 
 
 def render_system_view() -> None:
@@ -654,6 +711,23 @@ def render_system_view() -> None:
                 st.success(t("Default media folder saved."))
 
     st.markdown(section_label("Updates"), unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown("### yt-dlp")
+        st.caption(t("The downloader engine updates automatically from PyPI every six hours, "
+                     "independently of StreamFetch releases. Your media stays untouched."))
+        if st.button(t("Check engine updates now"), width="stretch"):
+            with st.spinner(t("Checking downloader engine…")):
+                ensure_engine(force=True)
+            st.session_state.pop("health_checks", None)
+        engine = engine_status()
+        st.caption(t("Active engine: {version}", version=engine.version))
+        if engine.error:
+            st.warning(t(engine.error))
+        elif engine.pending_version:
+            st.info(t("yt-dlp {version} is ready. Restart StreamFetch to activate it safely.",
+                      version=engine.pending_version))
+        elif engine.checked_at:
+            st.success(t("Downloader engine is up to date as of the last successful check."))
     settings = st.session_state.app_settings
     with st.container(border=True):
         check_updates = st.checkbox(
@@ -706,7 +780,11 @@ def render_system_view() -> None:
                     )
             notes_col.link_button(t("Release notes"), release.url, width="stretch")
         elif not st.session_state.get("update_error"):
-            st.info(t("You are running the latest available version."))
+            if "latest_release" in st.session_state:
+                st.info(t("You are running the latest available version."))
+            else:
+                st.info(t("App update checks are disabled." if not settings.check_updates
+                          else "App updates have not been checked yet."))
         if st.session_state.get("update_error"):
             st.warning(st.session_state.update_error)
         result = st.session_state.get("update_result")
@@ -1586,6 +1664,7 @@ def main() -> None:
 
 
 def analyze(raw_urls: str) -> None:
+    st.session_state.pop("previews", None)
     try:
         urls = parse_urls(raw_urls)
         downloader = Downloader()
@@ -1600,8 +1679,10 @@ def analyze(raw_urls: str) -> None:
             st.session_state.previews = [
                 downloader.inspect(url, limit=preview_limit) for url in urls
             ]
-    except (ValidationError, DownloaderError) as exc:
+    except ValidationError as exc:
         st.error(t(str(exc)))
+    except DownloaderError as exc:
+        render_download_failure(str(exc))
 
 
 def selected_download_urls(raw_urls: str) -> tuple[str, ...]:
@@ -1657,6 +1738,14 @@ def enqueue_download(raw_urls: str, manager: DownloadJobManager) -> None:
     st.success(t("Queued {count} background download job(s).", count=len(job_ids)))
 
 
+def render_download_failure(error: str) -> None:
+    failure = classify_download_error(error)
+    st.error(t(failure.title))
+    st.caption(t(failure.guidance))
+    with st.expander(t("Technical details")):
+        st.code(safe_error_detail(error), language=None)
+
+
 @st.fragment(run_every=1.0)
 def render_download_jobs(manager: DownloadJobManager) -> None:
     jobs = manager.snapshots()
@@ -1687,7 +1776,7 @@ def render_download_jobs(manager: DownloadJobManager) -> None:
             if details:
                 st.caption(" · ".join(details))
             if job.error:
-                st.error(t(job.error))
+                render_download_failure(job.error)
 
             action_col, cancel_col, files_col = st.columns([1, 1, 2])
             if job.status in {JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.PAUSING}:

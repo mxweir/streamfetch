@@ -68,6 +68,25 @@ only after consent. Media tagging requires explicit confirmation and creates a
 full original-file backup before replacing a file. Backups contain private media;
 protect them like your library and do not attach them to issue reports.
 
+## Download-engine updates
+
+Since 1.9, engine checks contact PyPI automatically at startup and before use
+(six-hour cache), separately from optional GitHub app-release checks. Only stable
+pure-Python yt-dlp, its pinned EJS solver and certifi wheels from the official
+PyPI HTTPS endpoints are accepted. SHA-256 digests are checked before extraction;
+archive traversal, symlinks, unexpected top-level files and oversized archives are
+rejected. This trusts the publishers and PyPI, not an independent code audit.
+Bundles are immutable and live in the current user's app-state directory, not
+system Python. Loaded engines are never hot-replaced; prepared updates require a
+full app restart. Failed/offline checks retain the installed engine. Unsupported
+Python/mandatory dependencies require a StreamFetch update. No media is migrated.
+
+Saved presets contain only allowlisted format/options fields. URLs, output paths
+and cookie-browser selections are excluded. Presets join normal pre-update state
+backups. Technical error details redact home directories, URLs and common secret
+headers; still review details before sharing. Error classification is heuristic
+guidance, not proof of the upstream cause. Cookie access always remains explicit.
+
 ## Reporting a vulnerability
 
 Use GitHub's private vulnerability reporting for this repository. Do not open a

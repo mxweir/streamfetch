@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
+from .engine_updates import javascript_options
 from .models import DownloadRequest, MediaType
 
 YOUTUBE_HOSTS = {
@@ -97,6 +98,7 @@ def build_ydl_options(
     output_dir = Path(request.output_dir).expanduser().resolve()
 
     options: dict = {
+        **javascript_options(),
         "paths": {"home": str(output_dir)},
         "outtmpl": {
             "default": (
@@ -141,7 +143,8 @@ def build_ydl_options(
             {
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": request.container,
-                "preferredquality": request.quality,
+                # Python postprocessor API expects kbps without the CLI's K suffix.
+                "preferredquality": request.quality.removesuffix("K"),
             }
         )
     else:

@@ -4,6 +4,33 @@ Every StreamFetch release is documented with the same visual format: a short
 summary, an authentic product image, user-visible changes, upgrade notes, and
 verification details. Full visual notes live in [`docs/releases`](docs/releases).
 
+## [1.9.0] — Your presets. Clearer downloads.
+
+_Released 2026-10-24 · [Full visual release notes](docs/releases/v1.9.0.md)_
+
+![Own download preset and a real completed MP3 job](docs/assets/releases/v1.9.0/presets-download.png)
+
+### Added
+
+- Save/update/apply/delete personal download presets, excluding links, paths and cookies.
+- Include named presets in existing data-preserving pre-update backups.
+
+### Improved
+
+- Keep real yt-dlp failures, show actionable help and optional redacted technical details.
+- Retry only recognised temporary job errors; stop permanent/unknown failures for review.
+- Clear stale source previews before analysing another link.
+- Correct the Python API bitrate value: choosing 192K now produces 192 kbit/s
+  MP3 audio instead of silently falling back to 128 kbit/s.
+- Automatically check stable yt-dlp releases at startup and before downloads
+  with a six-hour cache, plus a manual check in System → Updates.
+- Update the engine, matching EJS scripts and CA certificates independently of
+  app releases, including frozen desktop builds, using SHA-256-verified PyPI wheels.
+- Keep the existing engine offline or after failed updates; activate prepared
+  updates on restart if the current engine is already in use. Never change media.
+- Explicitly enable installed Node.js/Deno/QuickJS runtimes for extraction.
+- Raise the bundled yt-dlp baseline to 2026.10.21.
+
 ## [1.8.0] — One library. Connected listening.
 
 _Released 2026-10-22 · [Full visual release notes](docs/releases/v1.8.0.md)_

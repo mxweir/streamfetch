@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from .config import build_ydl_options, new_media_files, validate_media_url
+from .download_errors import classify_download_error
+from .engine_updates import ensure_engine, javascript_options
 from .models import DownloadRequest, DownloadResult, PreviewEntry, ProgressEvent, SourcePreview
 
 ProgressCallback = Callable[[ProgressEvent], None]
@@ -16,12 +18,36 @@ ProgressCallback = Callable[[ProgressEvent], None]
 class DownloaderError(RuntimeError):
     """Friendly wrapper for downloader and extractor failures."""
 
+    @property
+    def retryable(self) -> bool:
+        return classify_download_error(str(self)).retryable
+
+
+class _DownloadLogger:
+    """Keep yt-dlp's real cause when ignoreerrors returns only a nonzero exit code."""
+
+    def __init__(self):
+        self.errors: list[str] = []
+
+    def debug(self, _message):
+        pass
+
+    def warning(self, _message):
+        pass
+
+    def error(self, message):
+        self.errors.append(str(message)[-4000:])
+        self.errors = self.errors[-8:]
+
 
 class Downloader:
     def inspect(self, url: str, limit: int = 12) -> SourcePreview:
         validate_media_url(url)
         yt_dlp = _import_yt_dlp()
+        logger = _DownloadLogger()
         options = {
+            "logger": logger,
+            **javascript_options(),
             "quiet": True,
             "no_warnings": True,
             "skip_download": True,
@@ -35,7 +61,7 @@ class Downloader:
             with yt_dlp.YoutubeDL(options) as ydl:
                 info = ydl.extract_info(url, download=False)
         except Exception as exc:  # yt-dlp exposes many extractor-specific errors
-            raise DownloaderError(str(exc)) from exc
+            raise DownloaderError("\n".join(logger.errors) or str(exc)) from exc
         if not info:
             raise DownloaderError("No downloadable media was found.")
         return _preview_from_info(info, source_url=url)
@@ -77,14 +103,16 @@ class Downloader:
                 callback(ProgressEvent(status, "A download failed", None, filename))
 
         options = build_ydl_options(request, hook)
+        logger = _DownloadLogger()
+        options["logger"] = logger
         try:
             with yt_dlp.YoutubeDL(options) as ydl:
                 error_code = ydl.download(list(request.urls))
         except Exception as exc:
-            raise DownloaderError(str(exc)) from exc
+            raise DownloaderError("\n".join(logger.errors) or str(exc)) from exc
         if error_code not in (None, 0):
             raise DownloaderError(
-                "One or more downloads failed. Check the URL, network, cookies, and FFmpeg setup."
+                "\n".join(logger.errors) or "The source returned an unspecified download error."
             )
 
         finished_at = time.time()
@@ -210,6 +238,7 @@ def estimate_download_bytes(
 
 
 def _import_yt_dlp():
+    ensure_engine()
     try:
         import yt_dlp
     except ImportError as exc:
