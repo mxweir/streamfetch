@@ -22,7 +22,6 @@ _Released 2026-10-24 · [Full visual release notes](docs/releases/v1.9.0.md)_
 - Clear stale source previews before analysing another link.
 - Correct the Python API bitrate value: choosing 192K now produces 192 kbit/s
   MP3 audio instead of silently falling back to 128 kbit/s.
-
 - Automatically check stable yt-dlp releases at startup and before downloads
   with a six-hour cache, plus a manual check in System → Updates.
 - Update the engine, matching EJS scripts and CA certificates independently of

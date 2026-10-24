@@ -326,10 +326,12 @@ Completed and failed jobs return after a restart; interrupted jobs return paused
 and can be resumed deliberately.
 
 App preferences, update metadata, and pre-update backups live in
-`~/.streamfetch/`. Before any update is installed or staged, StreamFetch creates
-a ZIP containing settings, job state, and a consistent SQLite snapshot. Media
+`~/.streamfetch/`. Before an **app release** is installed or staged, StreamFetch creates
+a ZIP containing settings, personal presets, job state, and a consistent SQLite snapshot. Media
 files are never copied, replaced, or deleted by the updater. Source checkouts
 are only updated automatically when they are clean and currently on `main`.
+Independent engine updates retain immutable bundles instead; they do not migrate
+library data or create full app backups.
 
 Subscriptions and sync history live in `~/.streamfetch/subscriptions.db`.
 Subscription downloads are stored inside each source's selected media folder
