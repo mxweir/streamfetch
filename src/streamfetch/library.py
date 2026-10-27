@@ -181,6 +181,7 @@ class MediaLibrary:
         media_type: LibraryMediaType = "all",
         sort: str = "newest",
         limit: int = 120,
+        offset: int = 0,
     ) -> tuple[MediaItem, ...]:
         clauses: list[str] = []
         parameters: list[str | int] = []
@@ -207,10 +208,10 @@ class MediaLibrary:
             "title": "COALESCE(custom_title, title) COLLATE NOCASE",
         }.get(sort, "modified_at DESC, COALESCE(custom_title, title) COLLATE NOCASE")
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        parameters.append(limit)
+        parameters.extend((max(0, limit), max(0, offset)))
         with self._connection() as connection:
             rows = connection.execute(
-                f"SELECT * FROM media_items {where} ORDER BY {order_by} LIMIT ?",  # noqa: S608
+                f"SELECT * FROM media_items {where} ORDER BY {order_by}, path LIMIT ? OFFSET ?",  # noqa: S608
                 parameters,
             ).fetchall()
         return tuple(self._item_from_row(row) for row in rows)

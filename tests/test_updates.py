@@ -63,6 +63,9 @@ def test_update_backup_contains_state_and_library_database(tmp_path):
     state.mkdir()
     (state / "settings.json").write_text("{}", encoding="utf-8")
     (state / "download-presets.json").write_text('{"version":1,"presets":{}}')
+    with sqlite3.connect(state / "inbox.db") as connection:
+        connection.execute("CREATE TABLE links(url TEXT)")
+        connection.execute("INSERT INTO links VALUES ('kept locally')")
     library = tmp_path / "media"
     database = library / ".streamfetch" / "library.db"
     database.parent.mkdir(parents=True)
@@ -75,6 +78,7 @@ def test_update_backup_contains_state_and_library_database(tmp_path):
     with zipfile.ZipFile(backup) as archive:
         assert "state/settings.json" in archive.namelist()
         assert "state/download-presets.json" in archive.namelist()
+        assert "state/inbox.db" in archive.namelist()
         extracted = tmp_path / "restored.db"
         extracted.write_bytes(archive.read("library/library.db"))
     with sqlite3.connect(extracted) as connection:

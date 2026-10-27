@@ -5,8 +5,8 @@
 <h1 align="center">StreamFetch</h1>
 
 <p align="center">
-  <strong>Download. Organize. Play.</strong><br>
-  A private, local-first media workspace for permitted YouTube and SoundCloud downloads.
+  <strong>Collect. Curate. Take anywhere.</strong><br>
+  Your personal, local-first media workspace for permitted YouTube and SoundCloud downloads.
 </p>
 
 <p align="center">
@@ -24,12 +24,14 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/releases/v1.6.0/product-tour.gif" width="760" alt="StreamFetch 1.6 showing smart playlists, listening tools and timestamped local speech search">
+  <img src="docs/assets/releases/v2.0.0/overview.png" width="900" alt="StreamFetch 2.0 real Overview workspace with recent media and download status">
 </p>
 
-StreamFetch wraps [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) in a focused
-Streamlit interface. Download permitted video or audio, keep it in a searchable
-local library, and play it without sending your collection to a cloud service.
+Save a link now. Find the exact moment later. Take a collection with you.
+StreamFetch 2.0 brings a link inbox, unified local search, collection exports and
+reliable downloads into one focused workspace, powered by
+[`yt-dlp`](https://github.com/yt-dlp/yt-dlp). Your library stays on your device;
+no cloud account is required.
 
 > [!IMPORTANT]
 > Download only media you created, media in the public domain, or media you have
@@ -41,18 +43,18 @@ local library, and play it without sending your collection to a cloud service.
 
 | Local by design | More than a downloader | Built for real collections |
 | --- | --- | --- |
-| Media, metadata, favorites, playlists, and history stay on your device. | A persistent library and player turn downloads into a usable media workspace. | Search, filters, cover art, editable metadata, duplicate detection, and imports are included. |
+| Media, metadata, favorites, playlists, and history stay on your device. | Capture links without downloading, then choose the right format when ready. | Search metadata, bookmarks and current transcripts; export selected originals with a portable playlist. |
 
 ## See it in action
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/assets/releases/v1.6.0/smart-listening.png" alt="Live smart playlists and the expanded floating player"></td>
-    <td width="50%"><img src="docs/assets/releases/v1.6.0/speech-search.png" alt="A local speech search result with a playable timestamp"></td>
+    <td width="50%"><img src="docs/assets/releases/v2.0.0/inbox.png" alt="Actual persistent link inbox in StreamFetch 2.0"></td>
+    <td width="50%"><img src="docs/assets/releases/v2.0.0/search.png" alt="Actual unified search across local metadata, bookmarks and transcript moments"></td>
   </tr>
   <tr>
-    <td align="center"><strong>A library that keeps up with you</strong><br><sub>Live playlist rules · watched folders · bookmarks · sleep timer</sub></td>
-    <td align="center"><strong>Find the moment, not just the file</strong><br><sub>Local transcription · subtitle import · click-to-play search results</sub></td>
+    <td align="center"><strong>Capture now. Decide later.</strong><br><sub>Persistent link inbox · duplicate protection · deliberate downloads</sub></td>
+    <td align="center"><strong>Find the moment, not just the file.</strong><br><sub>Metadata · bookmarks · current transcripts · exact timestamps</sub></td>
   </tr>
 </table>
 
@@ -65,7 +67,32 @@ local library, and play it without sending your collection to a cloud service.
 
 ## What you get
 
-### Your presets. Clearer downloads. — New in 1.9
+### A complete media workflow — New in 2.0
+
+- **A focused workspace:** compact app bar and clear sidebar navigation for
+  Overview, Inbox, Download, Search, Library, Subscriptions and System.
+- **A useful starting point:** Overview surfaces continue-listening entries,
+  recent media and job counts; listening opens the Library player.
+- **A persistent link inbox:** collect supported links, deduplicate them, and move
+  them through ready, handed-off and archived states. Saving never starts a download.
+  Links can be saved offline; previews and source downloads still need internet.
+- **One local search:** search indexed metadata, bookmarks and up-to-date transcript
+  moments. Open a moment at its exact timestamp in Library. Whisper is optional;
+  imported subtitles work without it, and files without transcripts remain searchable
+  through their metadata and bookmarks.
+- **Collections in fewer clicks:** select multiple tracks for favorites, your queue
+  or a playlist. Export original files as ZIP with a relative-path M3U8 playlist and
+  SHA-256 manifest, limited to 200 tracks and a 200 MiB archive per export.
+- **Downloads that respect your choices:** profile-specific archives and distinct
+  output names keep MP4, MP3, quality variants and clips independent. Jobs report
+  their own final files instead of guessing from a folder scan.
+
+![Real collection actions and portable original-file export](docs/assets/releases/v2.0.0/collections.png)
+
+[Full visual 2.0 release notes](docs/releases/v2.0.0.md) ·
+[Download the latest release](https://github.com/mxweir/streamfetch/releases/latest)
+
+### Your presets. Clearer downloads. — Included from 1.9
 
 Save your own download setups and get concrete help when a source fails.
 The download engine now updates independently of StreamFetch releases.
@@ -202,6 +229,7 @@ order; older local items outside that window are retained.
 
 ### Player
 
+- Playback controls live in Library; other workspaces do not promise continuous playback.
 - Floating mini-player that becomes a full-width bottom bar on narrow screens
 - Persistent current item, queue, playback position, volume, repeat, and transition settings
 - Automatic queue advancement and next-item preloading across audio and video
@@ -333,6 +361,17 @@ are only updated automatically when they are clean and currently on `main`.
 Independent engine updates retain immutable bundles instead; they do not migrate
 library data or create full app backups.
 
+The link inbox is local app state and is included in pre-update backups. Treat
+its contents and backups as private: SoundCloud share links may contain secret
+tokens. Saving a link does not validate its availability or download permission.
+Removing an inbox entry does not delete already-downloaded media.
+
+Collection export copies originals without rewriting embedded tags. A manifest
+adds file hashes and relative names, not absolute library database paths or app
+secrets; original embedded source URLs/comments remain in the files. Review
+content before sharing. ZIP export is not a backup or a ZIP-import feature, and
+is not exposed as a new home-player API.
+
 Subscriptions and sync history live in `~/.streamfetch/subscriptions.db`.
 Subscription downloads are stored inside each source's selected media folder
 under `Subscriptions/`. Open that folder in Library to play or organize them.
@@ -382,7 +421,14 @@ bandwidth and storage. Do not expose it to the internet without authentication,
 quotas, isolation, and storage controls. Please report vulnerabilities through
 [SECURITY.md](SECURITY.md).
 
-## Version 1.8: one library, connected listening
+## Version 2.0: collect, curate, take anywhere
+
+[Visual 2.0 release notes](docs/releases/v2.0.0.md) cover the new workspace,
+offline link inbox, unified local search, bulk collection actions, portable
+exports and download-integrity improvements. See the
+[product brief](docs/V2_PRODUCT_BRIEF.md) for scope and acceptance criteria.
+
+### Previously in 1.8: one library, connected listening
 
 [Visual 1.8 release notes](docs/releases/v1.8.0.md): acknowledged track/position
 handoffs, optional computer-speaker control and original-file downloads, plus

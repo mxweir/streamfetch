@@ -14,6 +14,8 @@ from uuid import uuid4
 import streamlit as st
 
 from streamfetch import __version__
+from streamfetch.activity import activity_page, completed_roots
+from streamfetch.collections_ui import render_collections
 from streamfetch.config import (
     ValidationError,
     human_size,
@@ -31,6 +33,8 @@ from streamfetch.downloader import (
 )
 from streamfetch.engine_updates import engine_status, ensure_engine
 from streamfetch.i18n import LANGUAGES, default_language, player_labels, translate
+from streamfetch.inbox import InboxStore
+from streamfetch.inbox_ui import render_inbox
 from streamfetch.jobs import DownloadJobManager, JobStatus, default_job_state_path
 from streamfetch.library import MediaItem, MediaLibrary, Playlist
 from streamfetch.listening import ListeningLibrary
@@ -45,8 +49,7 @@ from streamfetch.subscriptions import SubscriptionService, SubscriptionStore
 from streamfetch.system import HealthStatus, diagnostics_archive, run_health_checks
 from streamfetch.theme import (
     APP_CSS,
-    hero_html,
-    legal_html,
+    appbar_html,
     library_sidebar_html,
     sidebar_header_html,
     system_sidebar_html,
@@ -57,6 +60,7 @@ from streamfetch.updates import (
     cached_update_check,
     launch_downloaded_update,
 )
+from streamfetch.workspace_ui import render_overview, render_search
 
 _source_favicon = Path(__file__).resolve().parent / "docs" / "assets" / "streamfetch-mark.svg"
 _package_favicon = Path(__file__).resolve().parent / "assets" / "streamfetch-mark.svg"
@@ -100,8 +104,7 @@ def section_label(text: str) -> str:
 
 def render_header() -> None:
     st.markdown(APP_CSS, unsafe_allow_html=True)
-    st.markdown(hero_html(t), unsafe_allow_html=True)
-    st.markdown(legal_html(t), unsafe_allow_html=True)
+    st.markdown(appbar_html(t), unsafe_allow_html=True)
 
 
 def current_health_checks(*, force: bool = False):
@@ -847,6 +850,8 @@ def render_download_view() -> None:
         raw_urls = st.text_area(
             t("YouTube or SoundCloud URLs"),
             height=160,
+            key="download_urls",
+            on_change=clear_inbox_handoff,
             placeholder=(
                 "One URL per line:\n"
                 "https://www.youtube.com/watch?v=...\n"
@@ -917,6 +922,7 @@ def render_library_view() -> None:
         st.session_state.library_dir = st.session_state.pop("pending_library_root")
     render_library_sidebar()
     root = Path(st.session_state.library_dir).expanduser().resolve()
+    st.session_state.active_library_root = str(root)
     library = MediaLibrary(root)
 
     st.markdown(section_label("Local library"), unsafe_allow_html=True)
@@ -978,7 +984,8 @@ def render_library_view() -> None:
 
     section = st.segmented_control(
         t("Library section"),
-        ["Home", "Browse", "Discover", "Favorites", "Playlists", "History", "Studio"],
+        ["Home", "Browse", "Collections", "Discover", "Favorites", "Playlists", "History",
+         "Studio"],
         default="Home",
         selection_mode="single",
         format_func=t,
@@ -986,6 +993,9 @@ def render_library_view() -> None:
     )
     if section == "Home":
         render_library_home(library)
+        return
+    if section == "Collections":
+        render_collections(library, t)
         return
     if section == "History":
         render_history(library)
@@ -1636,22 +1646,102 @@ def filter_collection(
     return tuple(filtered[:120])
 
 
+def clear_inbox_handoff() -> None:
+    st.session_state.pop("inbox_handoff_ids", None)
+
+
+def open_inbox_download(urls: tuple[str, ...]) -> None:
+    st.session_state.pending_download_urls = "\n".join(urls)
+    navigate_workspace("download")
+
+
+def navigate_workspace(workspace: str, section: str | None = None) -> None:
+    routes = {"overview": "Overview", "search": "Search", "inbox": "Inbox",
+              "download": "Download", "library": "Library", "system": "System",
+              "studio": "Library", "subscriptions": "Subscriptions"}
+    st.session_state.pending_workspace = routes.get(workspace.lower(), "Overview")
+    if workspace.lower() == "studio":
+        st.session_state.pending_library_section = "Studio"
+        st.session_state.pending_studio_section = (
+            "Home player" if section == "sharing" else "Smart playlists"
+        )
+    elif section:
+        st.session_state.pending_library_section = section
+    st.rerun()
+
+
+def workspace_library() -> MediaLibrary:
+    root = Path(st.session_state.get("active_library_root", default_download_dir()))
+    library = MediaLibrary(root)
+    dirty = set(st.session_state.get("library_dirty_roots", ()))
+    if not library.database_path.exists() or str(library.root) in dirty:
+        library.scan()
+        dirty.discard(str(library.root))
+        st.session_state.library_dirty_roots = dirty
+        st.session_state.library_scanned_root = str(library.root)
+    return library
+
+
+def workspace_play(item: MediaItem, seconds: float | None = None) -> None:
+    library = workspace_library()
+    if not item.path.is_file() or not item.path.resolve().is_relative_to(library.root):
+        st.error(t("The selected media is no longer available. Refresh your library."))
+        return
+    library.set_current_item(item.path)
+    library.record_play(item.path)
+    if seconds is not None:
+        library.set_playback_position(item.path, seconds)
+        st.session_state.player_seek_request = dict(
+            nonce=uuid4().hex, seconds=seconds, path=str(item.path)
+        )
+    st.session_state.player_autoplay = True
+    st.session_state.pending_library_root = str(library.root)
+    navigate_workspace("library")
+
+
 def main() -> None:
+    for pending, target in (("pending_workspace", "workspace"),
+                            ("pending_library_section", "library_section"),
+                            ("pending_studio_section", "studio_section"),
+                            ("pending_download_urls", "download_urls")):
+        if pending in st.session_state:
+            st.session_state[target] = st.session_state.pop(pending)
     render_header()
     folder_watcher(str(default_state_dir()))
     initialize_startup_services()
+    observe_download_completions(get_download_manager().snapshots())
     if not st.session_state.app_settings.first_run_completed:
         render_first_run_dialog()
     render_startup_notices()
-    workspace = st.segmented_control(
-        t("Workspace"),
-        ["Download", "Library", "Subscriptions", "System"],
-        default="Library",
-        selection_mode="single",
-        format_func=t,
-        key="workspace",
-    )
-    if workspace == "Library":
+    with st.sidebar:
+        workspace = st.radio(
+            t("Workspace"),
+            ["Overview", "Inbox", "Download", "Search", "Library", "Subscriptions", "System"],
+            format_func=t,
+            key="workspace",
+            label_visibility="collapsed",
+            width="stretch",
+        )
+        st.divider()
+    if workspace in {"Overview", "Search"}:
+        with st.sidebar:
+            render_language_picker()
+            st.caption(t("Collect. Curate. Take anywhere."))
+        try:
+            library = workspace_library()
+            if workspace == "Overview":
+                render_overview(library, get_download_manager(), t,
+                                navigate_workspace, workspace_play)
+            else:
+                render_search(library, t, workspace_play)
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            st.error(t("The library could not be opened: {error}", error=exc))
+    elif workspace == "Inbox":
+        with st.sidebar:
+            render_language_picker()
+            st.caption(t("Collect. Curate. Take anywhere."))
+        render_inbox(t, open_inbox_download)
+    elif workspace == "Library":
         render_library_view()
     elif workspace == "System":
         render_system_view()
@@ -1735,6 +1825,13 @@ def enqueue_download(raw_urls: str, manager: DownloadJobManager) -> None:
         st.error(t("FFmpeg was not found. Install FFmpeg and restart the app before downloading."))
         return
     job_ids = manager.submit(request)
+    inbox_ids = st.session_state.pop("inbox_handoff_ids", ())
+    if inbox_ids:
+        try:
+            InboxStore().attach_jobs(inbox_ids, job_ids)
+        except (ValueError, sqlite3.Error):
+            # A local reference failure must never resubmit an already accepted job.
+            st.warning(t("Downloads started, but their inbox references could not be saved."))
     st.success(t("Queued {count} background download job(s).", count=len(job_ids)))
 
 
@@ -1746,9 +1843,20 @@ def render_download_failure(error: str) -> None:
         st.code(safe_error_detail(error), language=None)
 
 
+def observe_download_completions(jobs) -> None:
+    observed, roots = completed_roots(jobs, st.session_state.get("observed_completed_jobs", ()))
+    st.session_state.observed_completed_jobs = observed
+    if roots:
+        st.session_state.library_dirty_roots = (
+            set(st.session_state.get("library_dirty_roots", ())) | roots
+        )
+        st.session_state.pop("library_scanned_root", None)
+
+
 @st.fragment(run_every=1.0)
 def render_download_jobs(manager: DownloadJobManager) -> None:
     jobs = manager.snapshots()
+    observe_download_completions(jobs)
     if not jobs:
         return
 
@@ -1759,10 +1867,22 @@ def render_download_jobs(manager: DownloadJobManager) -> None:
         manager.remove_finished()
         st.rerun(scope="fragment")
 
+    view = st.segmented_control(
+        t("Activity filter"), ["Active", "Needs attention", "Completed", "All"],
+        default="All", format_func=t, key="activity_filter",
+    )
+    jobs, total = activity_page(jobs, view)
+    if total > len(jobs):
+        st.caption(t("Showing the latest {count} of {total} jobs.", count=len(jobs), total=total))
+    if not jobs:
+        st.caption(t("No jobs in this view."))
+
     for job in jobs:
         with st.container(border=True):
             title_col, status_col = st.columns([3, 1])
-            title_col.markdown(f"**{job.url}**")
+            title_col.write(Path(job.filename).name if job.filename else job.url)
+            if job.filename:
+                title_col.caption(job.url)
             status_col.caption(t(job.status.value).upper())
             st.progress(job.progress, text=t(job.message))
 
@@ -1812,7 +1932,6 @@ def render_download_jobs(manager: DownloadJobManager) -> None:
                 files_col.caption(
                     t("Created: {files}", files=", ".join(path.name for path in job.files[:4]))
                 )
-                st.session_state.pop("library_scanned_root", None)
 
 
 if __name__ == "__main__":

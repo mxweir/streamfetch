@@ -11,6 +11,7 @@ import pytest
 from streamfetch.desktop import find_free_port, find_streamlit_app, stop_server, streamlit_options
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX signal constants")
 def test_posix_cleanup_targets_only_owned_server_group(monkeypatch):
     calls = []
     process = SimpleNamespace(pid=1234, wait=lambda timeout: 0)

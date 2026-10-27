@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from .config import build_ydl_options, new_media_files, validate_media_url
+from .config import build_ydl_options, validate_media_url
 from .download_errors import classify_download_error
 from .engine_updates import ensure_engine, javascript_options
 from .models import DownloadRequest, DownloadResult, PreviewEntry, ProgressEvent, SourcePreview
@@ -75,6 +75,7 @@ class Downloader:
         output_dir = Path(request.output_dir).expanduser().resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
         started_at = time.time()
+        owned_paths: set[Path] = set()
 
         def hook(data: dict) -> None:
             if callback is None:
@@ -103,6 +104,30 @@ class Downloader:
                 callback(ProgressEvent(status, "A download failed", None, filename))
 
         options = build_ydl_options(request, hook)
+        archive = options.get("download_archive")
+        if archive:
+            Path(archive).parent.mkdir(parents=True, exist_ok=True)
+
+        def processing_hook(data: dict) -> None:
+            info = data.get("info_dict") or {}
+            if callback:
+                callback(ProgressEvent("processing", "Processing media…", 1.0,
+                                       info.get("filepath")))
+            if data.get("status") != "finished":
+                return
+            candidates = [info.get("filepath")]
+            candidates.extend(chapter.get("filepath") for chapter in info.get("chapters") or [])
+            for value in candidates:
+                if not isinstance(value, (str, Path)):
+                    continue
+                path = Path(value).resolve()
+                if not path.is_relative_to(output_dir):
+                    raise DownloaderError(
+                        "A download result was outside the selected media folder."
+                    )
+                owned_paths.add(path)
+
+        options["postprocessor_hooks"] = [processing_hook]
         logger = _DownloadLogger()
         options["logger"] = logger
         try:
@@ -116,7 +141,9 @@ class Downloader:
             )
 
         finished_at = time.time()
-        files = new_media_files(output_dir, started_at)
+        media_extensions = {".mp3", ".m4a", ".opus", ".flac", ".wav", ".mp4", ".mkv", ".webm"}
+        files = tuple(sorted(path for path in owned_paths
+                             if path.is_file() and path.suffix.lower() in media_extensions))
         return DownloadResult(output_dir, files, started_at, finished_at)
 
 

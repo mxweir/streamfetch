@@ -42,6 +42,7 @@ class DownloadJobSnapshot:
     files: tuple[Path, ...]
     error: str | None
     created_at: float
+    output_dir: Path | None = None
 
 
 @dataclass
@@ -246,6 +247,8 @@ class DownloadJobManager:
             job.progress = 1.0
             job.message = "Complete"
             job.files = result.files
+            if result.files:
+                job.filename = str(result.files[0])
             job.error = None
             self._persist_locked()
 
@@ -327,6 +330,7 @@ class DownloadJobManager:
             files=job.files,
             error=job.error,
             created_at=job.created_at,
+            output_dir=job.request.output_dir,
         )
 
 
