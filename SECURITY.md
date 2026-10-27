@@ -79,8 +79,9 @@ it does not send queries or media to an online search service.
 
 Collection ZIPs contain explicitly selected original files, relative M3U8 paths
 and a versioned, allowlisted size/SHA-256 metadata manifest. Limits are 200 tracks
-and a 200 MiB archive. The exporter refuses symlinks and special files. POSIX
-opens each directory relative to a verified directory descriptor; Windows
+and a 200 MiB archive. The exporter rejects paths outside the resolved library
+and special files. POSIX opens every resolved path component without following
+symlinks, relative to a verified directory descriptor; Windows
 validates the actual opened file handle's resolved path before reading. Path
 containment is checked again at export time, not merely when indexing media.
 There is no ZIP-import endpoint or additional home-player download API.
