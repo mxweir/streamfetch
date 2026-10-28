@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/releases/v2.0.0/overview.png" width="900" alt="StreamFetch 2.0 real Overview workspace with recent media and download status">
+  <img src="docs/assets/releases/v2.0.1/overview.png" width="900" alt="Actual StreamFetch 2.0.1 desktop workspace with continue listening and recent media">
 </p>
 
 Save a link now. Find the exact moment later. Take a collection with you.

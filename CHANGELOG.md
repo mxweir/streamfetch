@@ -8,7 +8,7 @@ verification details. Full visual notes live in [`docs/releases`](docs/releases)
 
 _Released 2026-10-28 · [Visual release notes](docs/releases/v2.0.1.md)_
 
-![Unchanged workspace from the 2.0 tour](docs/assets/releases/v2.0.0/overview.png)
+![Verified updates in the actual downloaded 2.0.1 desktop package](docs/assets/releases/v2.0.1/update-health.png)
 
 - Fix certificate-store lookup in frozen desktop update clients by adding the
   packaged Mozilla CA bundle to configured system trust. Certificate and hostname
