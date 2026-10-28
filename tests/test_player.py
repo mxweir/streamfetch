@@ -49,7 +49,7 @@ def test_media_url_registers_local_file() -> None:
     url = media_url(item, "player-current", manager)
 
     assert url == "/media/track.mp3"
-    assert manager.calls == [("/tmp/track.mp3", "audio/mpeg", "player-current")]
+    assert manager.calls == [(str(item.path), "audio/mpeg", "player-current")]
 
 
 def test_build_player_data_preloads_next_queue_entry() -> None:

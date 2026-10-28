@@ -6,7 +6,7 @@ verification details. Full visual notes live in [`docs/releases`](docs/releases)
 
 ## [2.0.0] — Collect. Curate. Take anywhere.
 
-_Released 2026-10-27 · [Full visual release notes](docs/releases/v2.0.0.md)_
+_Released 2026-10-28 · [Full visual release notes](docs/releases/v2.0.0.md)_
 
 ![Actual StreamFetch 2.0 Overview](docs/assets/releases/v2.0.0/overview.png)
 

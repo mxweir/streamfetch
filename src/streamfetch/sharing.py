@@ -26,10 +26,18 @@ ASSETS = Path(__file__).parent / "assets" / "mobile"
 
 
 def local_address():
+    """Ask the OS for its outgoing interface without DNS or sending a packet.
+
+    Hostname resolution can block for over a minute on disconnected Macs. A UDP
+    connect only selects a local route; it does not transmit application data.
+    The address is still a suggestion, never permission to start sharing.
+    """
     try:
-        addresses = socket.gethostbyname_ex(socket.gethostname())[2]
-        return next(value for value in addresses if not value.startswith("127."))
-    except (OSError, StopIteration):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.settimeout(0.25)
+            probe.connect(("192.0.2.1", 9))
+            return validate_address(probe.getsockname()[0])
+    except (OSError, ValueError):
         return "127.0.0.1"
 
 
