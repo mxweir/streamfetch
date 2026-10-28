@@ -22,6 +22,8 @@ from typing import Any
 
 from packaging.version import InvalidVersion, Version
 
+from .network import verified_context
+
 REPOSITORY = "mxweir/streamfetch"
 LATEST_RELEASE_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 
@@ -56,7 +58,9 @@ def fetch_latest_release(timeout: float = 5) -> ReleaseInfo:
         headers={"Accept": "application/vnd.github+json", "User-Agent": "StreamFetch"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        with urllib.request.urlopen(
+            request, timeout=timeout, context=verified_context()
+        ) as response:  # noqa: S310
             payload = json.load(response)
     except (OSError, ValueError, urllib.error.URLError) as exc:
         raise RuntimeError("The latest release could not be checked.") from exc
@@ -288,7 +292,10 @@ def _download_packaged_asset(release: ReleaseInfo, state_dir: Path) -> Path:
     target = target_dir / Path(asset["name"]).name
     request = urllib.request.Request(asset["url"], headers={"User-Agent": "StreamFetch"})
     try:
-        with urllib.request.urlopen(request, timeout=60) as response, target.open("wb") as output:  # noqa: S310
+        with (
+            urllib.request.urlopen(request, timeout=60, context=verified_context()) as response,
+            target.open("wb") as output,
+        ):  # noqa: S310
             shutil.copyfileobj(response, output)
     except (OSError, urllib.error.URLError) as exc:
         target.unlink(missing_ok=True)

@@ -27,6 +27,7 @@ from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
+from streamfetch.network import verified_context
 from streamfetch.settings import default_state_dir
 
 CHECK_INTERVAL = 6 * 60 * 60
@@ -89,7 +90,7 @@ def _fetch(url: str, *, artifact: bool = False) -> bytes:
     if parsed.scheme != "https" or parsed.hostname != host or parsed.username:
         raise ValueError("Unexpected update origin")
     request = urllib.request.Request(url, headers={"User-Agent": "StreamFetch-engine-updater"})
-    with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
+    with urllib.request.urlopen(request, timeout=5, context=verified_context()) as response:  # noqa: S310
         if urlparse(response.url).hostname != host or not response.url.startswith("https://"):
             raise ValueError("Unexpected update redirect")
         data = response.read(MAX_WHEEL_BYTES + 1)
