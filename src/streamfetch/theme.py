@@ -439,6 +439,35 @@ p, label, [data-testid="stMarkdownContainer"] { color: inherit; }
 [data-testid="stSidebar"] .stRadio [role="radiogroup"] {
     background: #29262f;
 }
+/* Primary navigation is a full-width destination list, not a form choice. */
+[data-testid="stSidebar"] .st-key-workspace [role="radiogroup"] {
+    width: 100%;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    gap: .35rem;
+}
+[data-testid="stSidebar"] .st-key-workspace [role="radiogroup"] > div {
+    width: 100%;
+}
+[data-testid="stSidebar"] .st-key-workspace label {
+    width: 100%;
+    box-sizing: border-box;
+    padding: .6rem .8rem !important;
+    background: rgba(255,255,255,.035);
+    transition: background .15s ease;
+}
+[data-testid="stSidebar"] .st-key-workspace label:hover {
+    background: rgba(217,184,255,.12);
+}
+[data-testid="stSidebar"] .st-key-workspace label:has(input:checked) {
+    background: #6047a5;
+    box-shadow: inset 3px 0 #d9b8ff;
+}
+[data-testid="stSidebar"] .st-key-workspace label:focus-within {
+    outline: 2px solid #d9b8ff;
+    outline-offset: 2px;
+}
 [data-testid="stProgressBar"] > div > div { background: var(--sf-violet) !important; }
 [data-testid="stDataFrame"] { overflow: hidden; border-radius: 16px; }
 hr { border-color: rgba(23,21,28,.13) !important; }
@@ -492,6 +521,19 @@ LOGO_SVG = """
         63 24 55.3888 24 46V41Z" fill="#CBA8FF"/>
   <circle cx="87" cy="25" r="10" fill="#FFD65A"/>
 </svg>
+"""
+
+
+def appbar_html(translate=lambda text: text) -> str:
+    return f"""
+<header class="sf-appbar">
+  <div class="sf-appbar__brand"><span class="sf-logo">{LOGO_SVG}</span>
+    <div><strong>StreamFetch</strong><br>
+      <small>{translate('Personal media workspace')} · {__version__}</small></div>
+  </div>
+  <div class="sf-appbar__status"><span class="sf-status-dot"></span>
+    <small>{translate('Private on this device')}</small></div>
+</header>
 """
 
 

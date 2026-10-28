@@ -4,6 +4,33 @@ Every StreamFetch release is documented with the same visual format: a short
 summary, an authentic product image, user-visible changes, upgrade notes, and
 verification details. Full visual notes live in [`docs/releases`](docs/releases).
 
+## [2.0.0] — Collect. Curate. Take anywhere.
+
+_Released 2026-10-28 · [Full visual release notes](docs/releases/v2.0.0.md)_
+
+![Actual StreamFetch 2.0 Overview](docs/assets/releases/v2.0.0/overview.png)
+
+### Added
+
+- Persistent offline-capable link inbox with URL deduplication, explicit hand-off
+  and ready/handed-off/archived states; saving never starts a download.
+- Unified local search across metadata, bookmarks and current transcript moments,
+  with exact timestamp navigation and no mandatory Whisper installation.
+- Bulk favorite, queue and playlist actions for selected library tracks.
+- Original-file collection ZIP export with relative-path M3U8 and SHA-256 manifest,
+  capped at 200 tracks and 200 MiB of media; no ZIP import or new home-player API.
+
+### Improved
+
+- Compact app bar and clear primary navigation across seven workspaces.
+- Useful Overview with continue listening, recent media and job counts.
+- Profile-specific download archives and distinct output names for format,
+  quality and clip variants, retaining existing media unchanged.
+- Job-owned final artifact tracking instead of broad folder scans; one library
+  index invalidation per completed batch.
+- Inbox state joins pre-update backups. Document private-link tokens and the
+  intentionally preserved embedded metadata in exported original media.
+
 ## [1.9.0] — Your presets. Clearer downloads.
 
 _Released 2026-10-24 · [Full visual release notes](docs/releases/v1.9.0.md)_

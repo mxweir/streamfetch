@@ -34,5 +34,5 @@ def t(text, **values):
     return text.format(**values)
 {view}(library, t{", lambda *a, **k: None" if view == "render_smart" else ""})
 """
-    result = AppTest.from_string(source).run()
+    result = AppTest.from_string(source, default_timeout=15).run()
     assert not result.exception

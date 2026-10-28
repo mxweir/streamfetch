@@ -8,6 +8,8 @@ from __future__ import annotations
 import locale
 from collections.abc import Mapping
 
+from streamfetch.i18n_v2 import GERMAN_V2
+
 LANGUAGES = {"English": "en", "Deutsch": "de"}
 
 STUDIO_GERMAN = {
@@ -503,6 +505,9 @@ GERMAN: dict[str, str] = {
     "PAUSED": "PAUSIERT",
     "PRESS PLAY": "START DRÜCKEN",
 }
+
+
+GERMAN.update(GERMAN_V2)
 
 
 def default_language() -> str:

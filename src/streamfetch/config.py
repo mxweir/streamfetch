@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
+import json
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Literal
@@ -96,6 +98,7 @@ def build_ydl_options(
     """Translate a validated request into yt-dlp Python API options."""
     validate_request(request)
     output_dir = Path(request.output_dir).expanduser().resolve()
+    profile = download_profile(request)
 
     options: dict = {
         **javascript_options(),
@@ -103,7 +106,7 @@ def build_ydl_options(
         "outtmpl": {
             "default": (
                 "%(uploader|Unknown)s/%(playlist|Singles)s/"
-                "%(playlist_index|0)05d - %(title).180B [%(id)s].%(ext)s"
+                f"%(playlist_index|0)05d - %(title).160B [%(id)s] [{profile}].%(ext)s"
             )
         },
         "windowsfilenames": True,
@@ -119,7 +122,9 @@ def build_ydl_options(
     if request.max_items is not None:
         options["playlistend"] = request.max_items
     if request.conflict_policy != "overwrite":
-        options["download_archive"] = str(output_dir / ".streamfetch-archive.txt")
+        options["download_archive"] = str(
+            output_dir / ".streamfetch" / "archives" / f"{profile}.txt"
+        )
     if progress_hook is not None:
         options["progress_hooks"] = [progress_hook]
     if request.cookie_browser:
@@ -135,7 +140,7 @@ def build_ydl_options(
     elif request.conflict_policy == "skip":
         options["nooverwrites"] = True
         options["continuedl"] = False
-    postprocessors = [{"key": "FFmpegSplitChapters"}] if request.split_chapters else []
+    postprocessors = []
 
     if request.media_type is MediaType.AUDIO:
         options["format"] = "bestaudio/best"
@@ -165,9 +170,29 @@ def build_ydl_options(
             }
         )
         postprocessors.append({"key": "FFmpegEmbedSubtitle", "already_have_subtitle": False})
+    if request.split_chapters:
+        # Split the final converted media, not the original pre-conversion source.
+        postprocessors.append({"key": "FFmpegSplitChapters"})
     if postprocessors:
         options["postprocessors"] = postprocessors
     return options
+
+
+def download_profile(request: DownloadRequest) -> str:
+    """Stable output identity: different formats/qualities/clips never share an archive or file."""
+    values = {
+        "schema": 2, "media": request.media_type.value, "container": request.container,
+        "quality": request.quality.removesuffix("K"), "sections": request.download_sections,
+        "chapters": request.split_chapters, "metadata": request.embed_metadata,
+        "thumbnail": request.embed_thumbnail, "subtitles": request.embed_subtitles,
+        "languages": sorted(request.subtitle_languages) if request.embed_subtitles else [],
+        "sponsorblock": sorted(request.sponsorblock_remove),
+    }
+    digest = hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()[:12]
+    label = values["quality"].lower() if request.quality != "0" else "best"
+    if request.media_type is MediaType.AUDIO and request.quality != "0":
+        label += "k"
+    return f"{label}-{digest}"
 
 
 def _video_format_selector(container: str, quality: str) -> str:
@@ -197,6 +222,10 @@ def validate_request(request: DownloadRequest) -> None:
         raise ValidationError(f"Unsupported {request.media_type.value} format: {request.container}")
     if request.media_type is MediaType.VIDEO and request.quality not in VIDEO_HEIGHTS:
         raise ValidationError(f"Unsupported video quality: {request.quality}")
+    if request.media_type is MediaType.AUDIO and request.quality.removesuffix("K") not in {
+        "0", "128", "192", "256", "320"
+    }:
+        raise ValidationError("Unsupported audio quality.")
     if request.max_items is not None and not 1 <= request.max_items <= 10_000:
         raise ValidationError("The item limit must be between 1 and 10,000.")
     if not 1 <= request.concurrent_fragments <= 16:

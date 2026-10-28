@@ -147,6 +147,9 @@ def create_pre_update_backup(
             if path.is_file():
                 archive.write(path, f"state/{filename}")
         databases = {}
+        inbox = state_dir / "inbox.db"
+        if inbox.is_file():
+            databases["state/inbox.db"] = inbox
         if library_root:
             databases["library/library.db"] = library_root / ".streamfetch" / "library.db"
         watched = state_dir / "watched-folders.json"

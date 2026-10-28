@@ -44,7 +44,8 @@ def test_subtitle_import_search_and_export(store):
 
 
 @pytest.mark.parametrize(
-    "text", ["", "nothing", "x" * 2_000_001, "00:00:02,000 --> 00:00:01,000\ninvalid"]
+    "text", ["", "nothing", "x" * 2_000_001, "00:00:02,000 --> 00:00:01,000\ninvalid"],
+    ids=["empty", "not-subtitles", "oversized", "reversed-timestamps"],
 )
 def test_invalid_subtitles(text):
     with pytest.raises(ValueError):

@@ -68,6 +68,30 @@ only after consent. Media tagging requires explicit confirmation and creates a
 full original-file backup before replacing a file. Backups contain private media;
 protect them like your library and do not attach them to issue reports.
 
+## Workspace, inbox and collection exports
+
+Since 2.0, the link inbox stores URLs and notes locally without fetching them.
+Private SoundCloud share tokens are retained when required for access. Protect
+`inbox.db` and pre-update backups; never attach them to public issue reports.
+Hand-off only prepares the download editor and never starts a job by itself.
+Local search reads indexed metadata, bookmarks and current transcript segments;
+it does not send queries or media to an online search service.
+
+Collection ZIPs contain explicitly selected original files, relative M3U8 paths
+and a versioned, allowlisted size/SHA-256 metadata manifest. Limits are 200 tracks
+and a 200 MiB archive. The exporter rejects paths outside the resolved library
+and special files. POSIX opens every resolved path component without following
+symlinks, relative to a verified directory descriptor; Windows
+validates the actual opened file handle's resolved path before reading. Path
+containment is checked again at export time, not merely when indexing media.
+There is no ZIP-import endpoint or additional home-player download API.
+
+Original media bytes are preserved, including embedded URLs, comments and tags.
+The manifest does not add absolute database paths or application credentials,
+but an export is not a privacy scrubber. Review files before sharing them.
+Prepared exports remain private local artifacts until explicitly downloaded or
+distributed. They are not a complete app-state backup or restore format.
+
 ## Download-engine updates
 
 Since 1.9, engine checks contact PyPI automatically at startup and before use
