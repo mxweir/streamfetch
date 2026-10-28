@@ -55,7 +55,7 @@ if sys.platform == "darwin":
         bundle_identifier="com.mxweir.streamfetch",
         info_plist={
             "CFBundleDisplayName": "StreamFetch",
-            "CFBundleShortVersionString": "2.0.0",
+            "CFBundleShortVersionString": "2.0.1",
             "NSHighResolutionCapable": True,
         },
     )

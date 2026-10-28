@@ -67,6 +67,11 @@ no cloud account is required.
 
 ## What you get
 
+> **2.0.1 desktop maintenance update:** verified update requests now use the
+> packaged CA bundle as well as configured system trust. If 2.0 cannot check for
+> updates, install the latest release manually; no library migration is needed.
+> [Patch details](docs/releases/v2.0.1.md).
+
 ### A complete media workflow — New in 2.0
 
 - **A focused workspace:** compact app bar and clear sidebar navigation for

@@ -4,6 +4,17 @@ Every StreamFetch release is documented with the same visual format: a short
 summary, an authentic product image, user-visible changes, upgrade notes, and
 verification details. Full visual notes live in [`docs/releases`](docs/releases).
 
+## [2.0.1] — Verified desktop updates
+
+_Released 2026-10-28 · [Visual release notes](docs/releases/v2.0.1.md)_
+
+![Unchanged workspace from the 2.0 tour](docs/assets/releases/v2.0.0/overview.png)
+
+- Fix certificate-store lookup in frozen desktop update clients by adding the
+  packaged Mozilla CA bundle to configured system trust. Certificate and hostname
+  verification stay enabled for PyPI, GitHub and installer downloads.
+- No media, metadata or app-state migration. All 2.0 functionality is retained.
+
 ## [2.0.0] — Collect. Curate. Take anywhere.
 
 _Released 2026-10-28 · [Full visual release notes](docs/releases/v2.0.0.md)_
