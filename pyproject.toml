@@ -26,7 +26,7 @@ dependencies = [
   "qrcode>=8.2,<9",
   "mutagen>=1.47,<2",
   "packaging>=24,<27",
-  "Pillow>=11,<13",
+  "Pillow>=11,<14",
   "streamlit>=1.66,<2",
   "yt-dlp[default]>=2026.10.26",
 ]
