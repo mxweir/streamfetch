@@ -73,7 +73,7 @@ jobs:
       - name: Package Linux executable
         if: runner.os == 'Linux'
         run: tar -C dist -czf StreamFetch-linux.tar.gz StreamFetch
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: StreamFetch-${{ matrix.name }}
           path: StreamFetch-*
