@@ -26,7 +26,7 @@ def render_subscriptions(service: SubscriptionService, media_root: str, t, langu
         st.caption(t("Downloads appear in the library of each source’s media folder."))
         language_picker()
     st.markdown(
-        '<div class="sf-section-label">STREAMFETCH 1.3</div>'
+        '<div class="sf-section-label">STREAMFETCH / SOURCES</div>'
         f'<div class="sf-view-heading"><h2>{html.escape(t("Subscriptions"))}</h2>'
         f"<p>{html.escape(t('Your favorite sources. Just the new arrivals.'))}</p></div>",
         unsafe_allow_html=True,
@@ -170,13 +170,17 @@ def source_activity(service, source_id, t):
     if candidates:
         st.markdown(f"### {t('New arrivals')}")
         item_labels = {item["key"]: f"{item['title']} · {t(item['status'])}" for item in candidates}
-        revision = hashlib.sha256("|".join(item_labels.values()).encode()).hexdigest()[:12]
+        revision = hashlib.sha256("|".join(item_labels).encode()).hexdigest()[:12]
+        saved_key = f"sync_saved_{source_id}"
+        widget_key = f"sync_items_{source_id}_{revision}"
+        selected = st.session_state.get(saved_key, list(item_labels)[: source["batch_limit"]])
         chosen = st.multiselect(
             t("Choose items to sync"),
             list(item_labels),
-            default=list(item_labels)[: source["batch_limit"]],
+            default=[key for key in selected if key in item_labels],
             format_func=item_labels.get,
-            key=f"sync_items_{source_id}_{revision}",
+            key=widget_key,
+            on_change=lambda: st.session_state.update({saved_key: st.session_state[widget_key]}),
         )
         st.caption(
             t("At most {count} selected items are queued per sync.", count=source["batch_limit"])

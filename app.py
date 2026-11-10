@@ -15,6 +15,7 @@ import streamlit as st
 
 from streamfetch import __version__
 from streamfetch.activity import activity_page, completed_roots
+from streamfetch.backup_ui import render_workspace_backup
 from streamfetch.collections_ui import render_collections
 from streamfetch.config import (
     ValidationError,
@@ -35,7 +36,12 @@ from streamfetch.engine_updates import engine_status, ensure_engine
 from streamfetch.i18n import LANGUAGES, default_language, player_labels, translate
 from streamfetch.inbox import InboxStore
 from streamfetch.inbox_ui import render_inbox
-from streamfetch.jobs import DownloadJobManager, JobStatus, default_job_state_path
+from streamfetch.jobs import (
+    DownloadJobManager,
+    JobStatus,
+    WorkspaceInUse,
+    default_job_state_path,
+)
 from streamfetch.library import MediaItem, MediaLibrary, Playlist
 from streamfetch.listening import ListeningLibrary
 from streamfetch.loudness import loudness_service
@@ -692,6 +698,10 @@ def render_system_view() -> None:
             if check.guidance and check.status != HealthStatus.READY:
                 st.code(t(check.guidance), language=None)
 
+    roots = folder_watcher(str(default_state_dir())).roots()
+    active = st.session_state.get("active_library_root", default_download_dir())
+    render_workspace_backup(tuple(MediaLibrary(Path(root)) for root in (active, *roots)), t)
+
     st.markdown(section_label("Defaults"), unsafe_allow_html=True)
     with st.container(border=True):
         default_media = st.text_input(
@@ -952,7 +962,8 @@ def render_library_view() -> None:
             if refresh_clicked or summary.added or summary.updated or summary.removed:
                 st.success(
                     t(
-                        "Library refreshed — {added} added, {updated} updated, {removed} removed.",
+                        "Library refreshed — {added} added, {updated} updated, "
+                        "{removed} newly missing.",
                         added=summary.added,
                         updated=summary.updated,
                         removed=summary.removed,
@@ -960,11 +971,25 @@ def render_library_view() -> None:
                 )
         render_library_import(library)
         stats = library.stats()
+        missing_items = library.missing_items()
+        if missing_items:
+            with st.expander(t("Missing files — library data retained")):
+                missing_item = st.selectbox(
+                    t("Missing file"), missing_items,
+                    format_func=lambda item: library.relative_path(item.path),
+                )
+                replacement = st.text_input(t("Replacement path inside this library"))
+                st.caption(t("Confirm that the replacement is the same original file."))
+                if st.button(t("Relink file"), disabled=not replacement.strip()):
+                    try:
+                        library.relink(missing_item.path, Path(replacement.strip()).expanduser())
+                    except (OSError, ValueError, sqlite3.Error) as exc:
+                        st.error(str(exc))
+                    else:
+                        st.rerun()
     except (OSError, sqlite3.Error) as exc:
         st.error(t("The library could not be opened: {error}", error=exc))
         return
-
-    render_player(library)
 
     st.markdown(
         '<div class="sf-stats">'
@@ -1361,6 +1386,7 @@ def render_media_art(item: MediaItem) -> None:
 
 
 def select_media(library: MediaLibrary, item: MediaItem) -> None:
+    st.session_state.player_library_root = str(library.root)
     library.set_current_item(item.path)
     library.record_play(item.path)
     st.session_state.player_autoplay = True
@@ -1400,8 +1426,9 @@ def render_player(library: MediaLibrary) -> None:
         st.session_state.desktop_command_root = str(library.root)
     current = library.current_item()
     queue = library.queue()
-    if current is None:
-        st.info(t("Choose an item to open the floating player."))
+    if current is None or not current.path.is_file():
+        if st.session_state.get("workspace") == "Library":
+            st.info(t("Choose an item to open the floating player."))
         if queue and st.button(t("Play first queued item"), type="primary"):
             item = library.take_queue_entry()
             if item:
@@ -1683,8 +1710,18 @@ def workspace_library() -> MediaLibrary:
 
 
 def workspace_play(item: MediaItem, seconds: float | None = None) -> None:
-    library = workspace_library()
-    if not item.path.is_file() or not item.path.resolve().is_relative_to(library.root):
+    libraries = (workspace_library(), *(
+        MediaLibrary(Path(root)) for root in folder_watcher(str(default_state_dir())).roots()
+    ))
+    library = next(
+        (candidate for candidate in libraries
+         if item.path.is_relative_to(candidate.root)
+         and candidate.database_path.is_file() and candidate.item_for_path(item.path)),
+        None,
+    )
+    if library is None or not item.path.is_file() or not item.path.resolve().is_relative_to(
+        library.root
+    ):
         st.error(t("The selected media is no longer available. Refresh your library."))
         return
     library.set_current_item(item.path)
@@ -1695,8 +1732,8 @@ def workspace_play(item: MediaItem, seconds: float | None = None) -> None:
             nonce=uuid4().hex, seconds=seconds, path=str(item.path)
         )
     st.session_state.player_autoplay = True
-    st.session_state.pending_library_root = str(library.root)
-    navigate_workspace("library")
+    st.session_state.player_library_root = str(library.root)
+    st.rerun()
 
 
 def main() -> None:
@@ -1707,6 +1744,11 @@ def main() -> None:
         if pending in st.session_state:
             st.session_state[target] = st.session_state.pop(pending)
     render_header()
+    try:
+        get_download_manager()
+    except WorkspaceInUse as exc:
+        st.error(t(str(exc)))
+        return
     folder_watcher(str(default_state_dir()))
     initialize_startup_services()
     observe_download_completions(get_download_manager().snapshots())
@@ -1723,6 +1765,18 @@ def main() -> None:
             width="stretch",
         )
         st.divider()
+    # Keep the component at the same position across every workspace rerun.
+    player_slot = st.container(key="global-player")
+    player_root = st.session_state.get(
+        "player_library_root", st.session_state.get("active_library_root", default_download_dir())
+    )
+    player_library = MediaLibrary(Path(player_root))
+    if player_library.database_path.is_file():
+        with player_slot:
+            try:
+                render_player(player_library)
+            except (OSError, sqlite3.Error) as exc:
+                st.caption(t("The library could not be opened: {error}", error=exc))
     if workspace in {"Overview", "Search"}:
         with st.sidebar:
             render_language_picker()
@@ -1733,7 +1787,11 @@ def main() -> None:
                 render_overview(library, get_download_manager(), t,
                                 navigate_workspace, workspace_play)
             else:
-                render_search(library, t, workspace_play)
+                watched = folder_watcher(str(default_state_dir())).roots()
+                render_search(
+                    library, t, workspace_play,
+                    other_libraries=tuple(MediaLibrary(Path(root)) for root in watched),
+                )
         except (OSError, sqlite3.Error, ValueError) as exc:
             st.error(t("The library could not be opened: {error}", error=exc))
     elif workspace == "Inbox":
@@ -1932,6 +1990,19 @@ def render_download_jobs(manager: DownloadJobManager) -> None:
                 files_col.caption(
                     t("Created: {files}", files=", ".join(path.name for path in job.files[:4]))
                 )
+                existing = next((path for path in job.files if path.is_file()), None)
+                if existing is not None and files_col.button(
+                    t("Open result in library"), key=f"job-result-{job.id}"
+                ):
+                    root = job.output_dir or existing.parent
+                    library = MediaLibrary(root)
+                    library.scan()
+                    item = library.item_for_path(existing)
+                    if item:
+                        library.set_current_item(item.path)
+                        st.session_state.player_library_root = str(library.root)
+                        st.session_state.pending_library_root = str(library.root)
+                        navigate_workspace("library")
 
 
 if __name__ == "__main__":

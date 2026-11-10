@@ -72,6 +72,17 @@ no cloud account is required.
 > updates, install the latest release manually; no library migration is needed.
 > [Patch details](docs/releases/v2.0.1.md).
 
+### Preview StreamFetch 3.0
+
+The 3.0 release candidate adds search across watched folders, a floating player
+across the workspace, local clip export and verified library backups. The home
+player supports German and English. See the release notes for the tested flows
+and the remaining requirements for a stable release.
+
+[3.0 RC2 release notes](docs/releases/v3.0.0rc2.md) · [3.0 roadmap](docs/ROADMAP-3.0.md)
+
+![Local search and the floating player in StreamFetch 3.0 RC2](docs/assets/releases/v3.0.0-rc.2/search-player.png)
+
 ### A complete media workflow — New in 2.0
 
 - **A focused workspace:** compact app bar and clear sidebar navigation for

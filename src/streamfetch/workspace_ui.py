@@ -1,9 +1,12 @@
 """Focused home and offline search surfaces for StreamFetch 2.0."""
 
 import re
+import sqlite3
+import subprocess
 
 import streamlit as st
 
+from streamfetch.clips import export_local_clip
 from streamfetch.workspace import overview, search
 
 
@@ -12,7 +15,7 @@ def _time(seconds):
     return f"{seconds // 60}:{seconds % 60:02d}"
 
 
-def _item(item, t, play, key, seconds=None, detail=""):
+def _item(item, t, play, key, seconds=None, detail="", library=None):
     with st.container(border=True):
         # Source titles are untrusted text, not Markdown image/link instructions.
         title = re.sub(r"([\\`*_{}\[\]<>()#+.!|~-])", r"\\\1", item.title)
@@ -26,6 +29,21 @@ def _item(item, t, play, key, seconds=None, detail=""):
             t("Resume") if seconds is not None else t("Play"), key=key, use_container_width=True
         ):
             play(item, seconds)
+        if library is not None and seconds is not None:
+            with st.popover(t("Export local clip")):
+                start = st.number_input(t("Start (seconds)"), min_value=0.0,
+                                        value=seconds, key=f"{key}-clip-start")
+                end = st.number_input(t("End (seconds)"), min_value=0.0,
+                                      value=max(seconds, min(
+                                          seconds + 30, item.duration_seconds or seconds + 30
+                                      )), key=f"{key}-clip-end")
+                if st.button(t("Save clip"), key=f"{key}-clip-save", disabled=end <= start):
+                    try:
+                        output = export_local_clip(library, item, start, end)
+                        library.scan()
+                        st.text(str(output))
+                    except (OSError, ValueError, sqlite3.Error, subprocess.SubprocessError) as exc:
+                        st.error(t(str(exc)))
 
 
 def render_overview(library, manager, t, navigate, play):
@@ -87,7 +105,7 @@ def render_overview(library, manager, t, navigate, play):
         )
 
 
-def render_search(library, t, play):
+def render_search(library, t, play, *, other_libraries=()):
     st.header(t("Find a track. Discover a moment."))
     st.caption(
         t(
@@ -103,7 +121,16 @@ def render_search(library, t, play):
         t("Transcript moments"): "transcript",
     }
     selected = st.radio(t("Search in"), list(kinds), horizontal=True, key="workspace-kind")
-    fingerprint = (str(library.root), query, kinds[selected])
+    libraries = {candidate.root: candidate for candidate in (library, *other_libraries)}
+    scopes = {"": t("All indexed folders"), **{str(root): str(root) for root in libraries}}
+    scope = ""
+    if len(libraries) > 1:
+        scope = st.selectbox(t("Media folder"), list(scopes), format_func=scopes.get)
+    selected_libraries = tuple(
+        candidate for root, candidate in libraries.items() if not scope or str(root) == scope
+    )
+    fingerprint = (tuple(str(candidate.root) for candidate in selected_libraries),
+                   query, kinds[selected])
     if st.session_state.get("workspace-search-fingerprint") != fingerprint:
         st.session_state["workspace-search-fingerprint"] = fingerprint
         st.session_state["workspace-search-offset"] = 0
@@ -112,7 +139,19 @@ def render_search(library, t, play):
         st.info(t("Try a title, artist, bookmark label or a phrase from a saved transcript."))
         return
     cursor = st.session_state.get("workspace-search-offset", 0)
-    page = search(library, query, kind=kinds[selected], offset=cursor)
+    index, offset = cursor if isinstance(cursor, tuple) else (0, cursor)
+    selected_library = selected_libraries[index]
+    page = search(selected_library, query, kind=kinds[selected], offset=offset)
+    while not page.hits and page.next_offset is None and index + 1 < len(selected_libraries):
+        index += 1
+        selected_library = selected_libraries[index]
+        page = search(selected_library, query, kind=kinds[selected])
+    if page.next_offset is not None:
+        next_cursor = (index, page.next_offset) if len(selected_libraries) > 1 else page.next_offset
+    elif index + 1 < len(selected_libraries):
+        next_cursor = (index + 1, 0)
+    else:
+        next_cursor = None
     if not page.hits:
         st.info(t("No matching media on this page. Try another phrase or category."))
     labels = {
@@ -122,14 +161,18 @@ def render_search(library, t, play):
     }
     for hit in page.hits:
         st.caption(t(labels[hit.kind]))
-        _item(hit.item, t, play, f"search-{hit.identity}", hit.seconds, hit.text)
+        if len(libraries) > 1:
+            st.text(str(selected_library.root))
+        _item(
+            hit.item, t, play, f"search-{hit.identity}", hit.seconds, hit.text, selected_library
+        )
     previous, following = st.columns(2)
     history = st.session_state.get("workspace-search-history", [])
     if previous.button(t("Previous page"), disabled=not history, key="search-previous"):
         st.session_state["workspace-search-offset"] = history[-1]
         st.session_state["workspace-search-history"] = history[:-1]
         st.rerun()
-    if following.button(t("Next page"), disabled=page.next_offset is None, key="search-next"):
+    if following.button(t("Next page"), disabled=next_cursor is None, key="search-next"):
         st.session_state["workspace-search-history"] = history + [cursor]
-        st.session_state["workspace-search-offset"] = page.next_offset
+        st.session_state["workspace-search-offset"] = next_cursor
         st.rerun()

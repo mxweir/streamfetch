@@ -100,9 +100,13 @@ def build_ydl_options(
     output_dir = Path(request.output_dir).expanduser().resolve()
     profile = download_profile(request)
 
+    job_fingerprint = hashlib.sha256(
+        json.dumps([request.urls, profile]).encode()
+    ).hexdigest()[:24]
+    staging = output_dir / ".streamfetch" / "downloads" / job_fingerprint
     options: dict = {
         **javascript_options(),
-        "paths": {"home": str(output_dir)},
+        "paths": {"home": str(output_dir), "temp": str(staging)},
         "outtmpl": {
             "default": (
                 "%(uploader|Unknown)s/%(playlist|Singles)s/"

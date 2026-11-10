@@ -52,6 +52,13 @@ def test_media_url_registers_local_file() -> None:
     assert manager.calls == [(str(item.path), "audio/mpeg", "player-current")]
 
 
+def test_media_url_uses_the_desktop_server_route(monkeypatch):
+    monkeypatch.setattr("streamfetch.player.st.get_option", lambda _: "streamfetch-local")
+    assert media_url(media_item("/tmp/track.mp3"), "player", FakeMediaManager()) == (
+        "/streamfetch-local/media/track.mp3"
+    )
+
+
 def test_build_player_data_preloads_next_queue_entry() -> None:
     manager = FakeMediaManager()
     current = media_item("/music/current.mp3")

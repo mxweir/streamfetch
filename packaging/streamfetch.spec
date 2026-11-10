@@ -1,12 +1,14 @@
 # Build with: pyinstaller --clean packaging/streamfetch.spec
 
 import sys
+import tomllib
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all
 
 
 ROOT = Path(SPECPATH).parent
+VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
 ICON = ROOT / (
     "packaging/streamfetch.icns" if sys.platform == "darwin" else "packaging/streamfetch.ico"
 )
@@ -55,7 +57,7 @@ if sys.platform == "darwin":
         bundle_identifier="com.mxweir.streamfetch",
         info_plist={
             "CFBundleDisplayName": "StreamFetch",
-            "CFBundleShortVersionString": "2.0.1",
+            "CFBundleShortVersionString": VERSION.split("rc")[0],
             "NSHighResolutionCapable": True,
         },
     )

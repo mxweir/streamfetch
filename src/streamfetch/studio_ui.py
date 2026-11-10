@@ -41,6 +41,7 @@ def sharing_service():
 
 
 def seek_to(library, item, seconds):
+    st.session_state.player_library_root = str(library.root)
     library.set_current_item(item.path)
     library.set_playback_position(item.path, seconds)
     library.record_play(item.path)

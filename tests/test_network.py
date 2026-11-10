@@ -1,6 +1,9 @@
+import hashlib
 import io
 import json
 import ssl
+
+import pytest
 
 from streamfetch import engine_updates, network, updates
 
@@ -46,10 +49,19 @@ def test_github_check_and_installer_use_verified_packaged_trust(monkeypatch, tmp
     monkeypatch.setattr(updates, "verified_context", lambda: context)
     monkeypatch.setattr(updates.urllib.request, "urlopen", opened)
     monkeypatch.setattr(updates.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(updates.platform, "machine", lambda: "arm64")
     assert updates.fetch_latest_release().version == "2.0.1"
+    name = "StreamFetch-macos-arm64.dmg"
+    url = f"https://github.com/{updates.REPOSITORY}/releases/download/v2.0.1/{name}"
+    digest = "sha256:" + hashlib.sha256(b"test installer").hexdigest()
+    asset = {"name": name, "url": url, "digest": digest}
     release = updates.ReleaseInfo("2.0.1", "Patch", "https://github.com/mxweir/streamfetch",
-                                  assets=({"name": "StreamFetch-macos.dmg",
-                                           "url": "https://example.invalid/app.dmg"},))
+                                  assets=(asset,))
     target = updates._download_packaged_asset(release, tmp_path)
     assert target.read_bytes() == b"test installer"
-    assert seen == [(updates.LATEST_RELEASE_URL, 5), ("https://example.invalid/app.dmg", 60)]
+    assert seen == [(updates.LATEST_RELEASE_URL, 5), (url, 60)]
+    asset["digest"] = "sha256:" + "0" * 64
+    with pytest.raises(RuntimeError, match="checksum did not match"):
+        updates._download_packaged_asset(release, tmp_path)
+    assert list(target.parent.iterdir()) == [target]
+    assert target.read_bytes() == b"test installer"

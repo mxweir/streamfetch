@@ -154,12 +154,19 @@ def search(
                 WHERE b.label LIKE ? ESCAPE '\\'""")
             parameters.append(pattern)
         if kind in {"all", "transcript"} and {"transcripts", "transcript_segments"} <= tables:
-            queries.append("""SELECT m.*, 'transcript' AS kind, s.text,
+            transcript_query = """SELECT m.*, 'transcript' AS kind, s.text,
                 s.start AS seconds, CAST(s.id AS TEXT) AS identity,t.signature
                 FROM transcript_segments s JOIN transcripts t ON t.path=s.path
                 JOIN media_items m ON m.path=s.path
-                WHERE t.status='ready' AND s.text LIKE ? ESCAPE '\\'""")
+                WHERE t.status='ready' AND s.text LIKE ? ESCAPE '\\'"""
             parameters.append(pattern)
+            if len(query) >= 3 and "transcript_search" in tables and "\x00" not in query:
+                transcript_query += (
+                    " AND s.id IN (SELECT rowid FROM transcript_search "
+                    "WHERE transcript_search MATCH ?)"
+                )
+                parameters.append('"' + query.replace('"', '""') + '"')
+            queries.append(transcript_query)
         if not queries:
             return SearchPage((), None)
         sql = (

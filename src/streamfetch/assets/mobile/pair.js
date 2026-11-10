@@ -4,7 +4,7 @@
   history.replaceState(null, '', '/pair');
   const status = document.getElementById('status');
   if (!token) {
-    status.textContent = 'Generate a new QR code in StreamFetch on your computer.';
+    status.textContent = homeText('Generate a new QR code in StreamFetch on your computer.');
     return;
   }
   try {
@@ -16,6 +16,6 @@
     if (!response.ok) throw new Error('Pairing unavailable');
     location.replace('/');
   } catch {
-    status.textContent = 'This QR code expired, was already used, or could not connect. Generate a new code on your computer.';
+    status.textContent = homeText('This QR code expired, was already used, or could not connect. Generate a new code on your computer.');
   }
 })();

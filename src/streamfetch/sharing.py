@@ -184,7 +184,7 @@ class HomePlayer:
                         "text/html; charset=utf-8",
                     )
                     return
-                if route in {"/style.css", "/player.js", "/pair.js"}:
+                if route in {"/style.css", "/player.js", "/pair.js", "/i18n.js"}:
                     self.respond(
                         200,
                         (ASSETS / route[1:]).read_bytes(),
@@ -480,6 +480,7 @@ class HomePlayer:
                     album=item.album,
                     media_type=item.media_type,
                     duration=item.duration_seconds,
+                    size_bytes=item.size_bytes,
                     playlists=memberships.get(str(item.path), []),
                     resume=self.library.playback_position(item.path),
                     gain_db=self.loudness.gain(item)

@@ -42,6 +42,7 @@ class MediaItem:
     source_url: str | None = None
     rating: int = 0
     tags: tuple[str, ...] = ()
+    media_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -110,18 +111,22 @@ class MediaLibrary:
         seen: set[str] = set()
 
         with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             existing = {
-                row["path"]: (row["size_bytes"], row["modified_at"])
+                row["path"]: (row["size_bytes"], row["modified_at"], row["missing"])
                 for row in connection.execute(
-                    "SELECT path, size_bytes, modified_at FROM media_items"
+                    "SELECT path, size_bytes, modified_at, missing FROM media_items"
                 )
             }
             for path in self._media_files():
                 relative_path = path.relative_to(self.root).as_posix()
+                try:
+                    stat = path.stat()
+                except FileNotFoundError:
+                    continue
                 seen.add(relative_path)
-                stat = path.stat()
                 previous = existing.get(relative_path)
-                if previous == (stat.st_size, stat.st_mtime):
+                if previous == (stat.st_size, stat.st_mtime, 0):
                     continue
 
                 metadata = self._inspect(path)
@@ -131,8 +136,8 @@ class MediaLibrary:
                     INSERT INTO media_items (
                         path, title, artist, album, duration_seconds, size_bytes,
                         media_type, format, modified_at, added_at, cover_path,
-                        source_url
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        source_url, media_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, lower(hex(randomblob(16))))
                     ON CONFLICT(path) DO UPDATE SET
                         title = excluded.title,
                         artist = excluded.artist,
@@ -143,7 +148,8 @@ class MediaLibrary:
                         format = excluded.format,
                         modified_at = excluded.modified_at,
                         cover_path = excluded.cover_path,
-                        source_url = excluded.source_url
+                        source_url = excluded.source_url,
+                        missing = 0
                     """,
                     (
                         relative_path,
@@ -165,15 +171,76 @@ class MediaLibrary:
                 else:
                     updated += 1
 
-            missing = set(existing) - seen
+            missing = {path for path in existing.keys() - seen if not existing[path][2]}
             connection.executemany(
-                "DELETE FROM media_items WHERE path = ?",
+                "UPDATE media_items SET missing = 1 WHERE path = ?",
                 ((path,) for path in missing),
             )
-            total = connection.execute("SELECT COUNT(*) FROM media_items").fetchone()[0]
+            total = connection.execute(
+                "SELECT COUNT(*) FROM media_items WHERE missing = 0"
+            ).fetchone()[0]
             self._clean_cover_cache(connection)
 
         return ScanSummary(added, updated, len(missing), total)
+
+    def missing_items(self, limit: int = 100) -> tuple[MediaItem, ...]:
+        return self._items_for_query(
+            "SELECT * FROM media_items WHERE missing = 1 ORDER BY path LIMIT ?", (limit,)
+        )
+
+    def relink(self, missing_path: Path, replacement: Path) -> None:
+        """Move an existing record and its references after explicit user confirmation."""
+        old = self.relative_path(missing_path)
+        new = self.relative_path(replacement)
+        actual = self.root / new
+        if not actual.is_file() or actual.suffix.lower() not in MEDIA_EXTENSIONS:
+            raise ValueError("Choose an existing media file in this library.")
+        stat = actual.stat()
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM media_items WHERE path = ? AND missing = 1", (old,)
+            ).fetchone()
+            if row is None or (self.root / old).is_file():
+                raise ValueError("The original file is no longer marked missing.")
+            if (stat.st_size, stat.st_mtime, actual.suffix.casefold()) != (
+                row["size_bytes"], row["modified_at"], missing_path.suffix.casefold()
+            ):
+                raise ValueError("The replacement must match the original size, date and format.")
+            tables = {row[0] for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )}
+            references = ("favorites", "queue", "playlist_items", "play_history",
+                          "playback_positions", "bookmarks", "transcripts", "transcript_segments")
+            linked = tuple(table for table in references if table in tables)
+            destination = connection.execute(
+                "SELECT * FROM media_items WHERE path = ?", (new,)
+            ).fetchone()
+            if destination is not None:
+                has_edits = any(destination[field] for field in (
+                    "custom_title", "custom_artist", "custom_album", "rating",
+                )) or destination["tags_json"] != "[]"
+                has_references = any(connection.execute(
+                    f"SELECT 1 FROM {table} WHERE path = ? LIMIT 1", (new,)  # noqa: S608
+                ).fetchone() for table in linked)
+                is_current = connection.execute(
+                    "SELECT 1 FROM settings WHERE key = 'current_item' AND value = ?", (new,)
+                ).fetchone()
+                if has_edits or has_references or is_current or destination["missing"]:
+                    raise ValueError("The replacement already has its own library data.")
+                connection.execute("DELETE FROM media_items WHERE path = ?", (new,))
+            connection.execute("PRAGMA defer_foreign_keys = ON")
+            connection.execute(
+                "UPDATE media_items SET path = ?, missing = 0 WHERE path = ?", (new, old)
+            )
+            for table in linked:
+                connection.execute(
+                    f"UPDATE {table} SET path = ? WHERE path = ?", (new, old)  # noqa: S608
+                )
+            connection.execute(
+                "UPDATE settings SET value = ? WHERE key = 'current_item' AND value = ?",
+                (new, old),
+            )
 
     def list_items(
         self,
@@ -183,7 +250,7 @@ class MediaLibrary:
         limit: int = 120,
         offset: int = 0,
     ) -> tuple[MediaItem, ...]:
-        clauses: list[str] = []
+        clauses: list[str] = ["missing = 0"]
         parameters: list[str | int] = []
         if search.strip():
             clauses.append(
@@ -217,7 +284,7 @@ class MediaLibrary:
         return tuple(self._item_from_row(row) for row in rows)
 
     def count_items(self, search: str = "", media_type: LibraryMediaType = "all") -> int:
-        clauses: list[str] = []
+        clauses: list[str] = ["missing = 0"]
         parameters: list[str] = []
         if search.strip():
             clauses.append(
@@ -250,7 +317,7 @@ class MediaLibrary:
                             THEN COALESCE(custom_artist, artist)
                     END) AS artists,
                     COALESCE(SUM(size_bytes), 0) AS size_bytes
-                FROM media_items
+                FROM media_items WHERE missing = 0
                 """
             ).fetchone()
         return LibraryStats(
@@ -322,7 +389,7 @@ class MediaLibrary:
 
     def recently_added(self, limit: int = 120) -> tuple[MediaItem, ...]:
         return self._items_for_query(
-            "SELECT * FROM media_items ORDER BY added_at DESC, path LIMIT ?",
+            "SELECT * FROM media_items WHERE missing = 0 ORDER BY added_at DESC, path LIMIT ?",
             (limit,),
         )
 
@@ -332,6 +399,7 @@ class MediaLibrary:
             SELECT media_items.*, COUNT(play_history.id) AS play_count
             FROM media_items
             JOIN play_history ON play_history.path = media_items.path
+            WHERE media_items.missing = 0
             GROUP BY media_items.path
             ORDER BY play_count DESC, MAX(play_history.played_at) DESC
             LIMIT ?
@@ -343,7 +411,7 @@ class MediaLibrary:
         return self._items_for_query(
             """
             SELECT * FROM media_items
-            WHERE rating >= ?
+            WHERE missing = 0 AND rating >= ?
             ORDER BY rating DESC, COALESCE(custom_title, title) COLLATE NOCASE
             LIMIT ?
             """,
@@ -356,7 +424,7 @@ class MediaLibrary:
             SELECT media_items.*
             FROM media_items
             LEFT JOIN play_history ON play_history.path = media_items.path
-            WHERE play_history.id IS NULL
+            WHERE media_items.missing = 0 AND play_history.id IS NULL
             ORDER BY media_items.added_at DESC, media_items.path
             LIMIT ?
             """,
@@ -373,7 +441,7 @@ class MediaLibrary:
         return self._items_for_query(
             """
             SELECT * FROM media_items
-            WHERE COALESCE(custom_artist, artist) = ? COLLATE NOCASE
+            WHERE missing = 0 AND COALESCE(custom_artist, artist) = ? COLLATE NOCASE
             ORDER BY COALESCE(custom_album, album) COLLATE NOCASE,
                      COALESCE(custom_title, title) COLLATE NOCASE
             """,
@@ -384,7 +452,7 @@ class MediaLibrary:
         return self._items_for_query(
             """
             SELECT * FROM media_items
-            WHERE COALESCE(custom_album, album) = ? COLLATE NOCASE
+            WHERE missing = 0 AND COALESCE(custom_album, album) = ? COLLATE NOCASE
             ORDER BY COALESCE(custom_artist, artist) COLLATE NOCASE,
                      COALESCE(custom_title, title) COLLATE NOCASE
             """,
@@ -396,7 +464,7 @@ class MediaLibrary:
             candidates = connection.execute(
                 """
                 SELECT * FROM media_items
-                WHERE size_bytes IN (
+                WHERE missing = 0 AND size_bytes IN (
                     SELECT size_bytes FROM media_items
                     GROUP BY size_bytes HAVING COUNT(*) > 1
                 )
@@ -475,7 +543,7 @@ class MediaLibrary:
                 SELECT media_items.*
                 FROM settings
                 JOIN media_items ON media_items.path = settings.value
-                WHERE settings.key = 'current_item'
+                WHERE settings.key = 'current_item' AND media_items.missing = 0
                 """
             ).fetchone()
         return self._item_from_row(row) if row else None
@@ -504,6 +572,7 @@ class MediaLibrary:
                        play_history.played_at AS history_played_at
                 FROM play_history
                 JOIN media_items ON media_items.path = play_history.path
+                WHERE media_items.missing = 0
                 ORDER BY play_history.id DESC
                 LIMIT ?
                 """,
@@ -522,7 +591,7 @@ class MediaLibrary:
                 SELECT media_items.*
                 FROM play_history
                 JOIN media_items ON media_items.path = play_history.path
-                WHERE play_history.path != ?
+                WHERE media_items.missing = 0 AND play_history.path != ?
                 ORDER BY play_history.id DESC
                 LIMIT 1
                 """,
@@ -556,7 +625,7 @@ class MediaLibrary:
                 """
                 SELECT media_items.*
                 FROM favorites
-                JOIN media_items ON media_items.path = favorites.path
+                JOIN media_items ON media_items.path = favorites.path AND media_items.missing = 0
                 ORDER BY favorites.created_at DESC
                 """
             ).fetchall()
@@ -586,6 +655,7 @@ class MediaLibrary:
                 SELECT media_items.*, queue.id AS queue_id
                 FROM queue
                 JOIN media_items ON media_items.path = queue.path
+                WHERE media_items.missing = 0
                 ORDER BY queue.position, queue.id
                 """
             ).fetchall()
@@ -599,6 +669,7 @@ class MediaLibrary:
                     SELECT media_items.*, queue.id AS queue_id
                     FROM queue
                     JOIN media_items ON media_items.path = queue.path
+                    WHERE media_items.missing = 0
                     ORDER BY queue.position, queue.id
                     LIMIT 1
                     """
@@ -609,7 +680,7 @@ class MediaLibrary:
                     SELECT media_items.*, queue.id AS queue_id
                     FROM queue
                     JOIN media_items ON media_items.path = queue.path
-                    WHERE queue.id = ?
+                    WHERE queue.id = ? AND media_items.missing = 0
                     """,
                     (entry_id,),
                 ).fetchone()
@@ -627,14 +698,19 @@ class MediaLibrary:
 
     def reorder_queue(self, entry_ids: list[int] | tuple[int, ...]) -> None:
         with self._connection() as connection:
-            current_ids = {
-                row[0] for row in connection.execute("SELECT id FROM queue")
-            }
-            if len(entry_ids) != len(current_ids) or set(entry_ids) != current_ids:
+            rows = connection.execute("""
+                SELECT queue.id, media_items.missing FROM queue
+                JOIN media_items ON media_items.path = queue.path
+                ORDER BY queue.position, queue.id
+            """).fetchall()
+            visible = {row["id"] for row in rows if not row["missing"]}
+            if len(entry_ids) != len(visible) or set(entry_ids) != visible:
                 raise ValueError("Queue order must contain every queued item exactly once.")
+            ordered = iter(entry_ids)
             connection.executemany(
                 "UPDATE queue SET position = ? WHERE id = ?",
-                ((position, entry_id) for position, entry_id in enumerate(entry_ids, start=1)),
+                ((position, row["id"] if row["missing"] else next(ordered))
+                 for position, row in enumerate(rows, start=1)),
             )
 
     def shuffle_queue(self, randomizer: random.Random | None = None) -> None:
@@ -786,7 +862,7 @@ class MediaLibrary:
                 SELECT media_items.*
                 FROM playlist_items
                 JOIN media_items ON media_items.path = playlist_items.path
-                WHERE playlist_items.playlist_id = ?
+                WHERE playlist_items.playlist_id = ? AND media_items.missing = 0
                 ORDER BY playlist_items.position, playlist_items.created_at
                 """,
                 (playlist_id,),
@@ -808,6 +884,7 @@ class MediaLibrary:
                 f"""
                 SELECT {expression} AS name, COUNT(*) AS item_count
                 FROM media_items
+                WHERE missing = 0
                 GROUP BY {expression}
                 ORDER BY name COLLATE NOCASE
                 """  # noqa: S608
@@ -905,6 +982,8 @@ class MediaLibrary:
             row["name"] for row in connection.execute("PRAGMA table_info(media_items)")
         }
         for column, definition in (
+            ("missing", "INTEGER NOT NULL DEFAULT 0"),
+            ("media_id", "TEXT"),
             ("custom_title", "TEXT"),
             ("custom_artist", "TEXT"),
             ("custom_album", "TEXT"),
@@ -915,6 +994,9 @@ class MediaLibrary:
                 connection.execute(
                     f"ALTER TABLE media_items ADD COLUMN {column} {definition}"  # noqa: S608
                 )
+        if "media_id" not in media_columns:
+            connection.execute("UPDATE media_items SET media_id = lower(hex(randomblob(16)))")
+            connection.commit()
         return connection
 
     @contextmanager
@@ -933,6 +1015,7 @@ class MediaLibrary:
             if path.is_file()
             and path.suffix.lower() in MEDIA_EXTENSIONS
             and self.state_dir not in path.parents
+            and path.resolve().is_relative_to(self.root)
         )
         return tuple(sorted(files))
 
@@ -1019,6 +1102,7 @@ class MediaLibrary:
             source_url=row["source_url"],
             rating=row["rating"] if "rating" in keys else 0,
             tags=tags,
+            media_id=row["media_id"] if "media_id" in keys else None,
         )
 
 

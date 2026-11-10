@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import multiprocessing
 import os
+import secrets
 import signal
 import socket
 import subprocess
@@ -41,16 +42,20 @@ def wait_for_server(
     process: subprocess.Popen[bytes] | None = None,
     timeout: float = 30,
 ) -> None:
+    health_url = url.rstrip("/") + "/_stcore/health"
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if process is not None and process.poll() is not None:
             raise RuntimeError("StreamFetch stopped before the desktop window opened.")
         try:
-            with urllib.request.urlopen(url, timeout=0.5) as response:  # noqa: S310
-                if response.status < 500:
+            with urllib.request.urlopen(health_url, timeout=0.5) as response:  # noqa: S310
+                if (response.status == 200 and response.geturl() == health_url
+                        and response.read(16) == b"ok"
+                        and (process is None or process.poll() is None)):
                     return
         except (urllib.error.URLError, TimeoutError):
-            time.sleep(0.15)
+            pass
+        time.sleep(0.15)
     raise RuntimeError("Timed out while starting the local StreamFetch server.")
 
 
@@ -59,6 +64,7 @@ def streamlit_options(port: int) -> dict[str, object]:
         "global_developmentMode": False,
         "server_address": "127.0.0.1",
         "server_port": port,
+        "server_baseUrlPath": os.environ.get("STREAMLIT_SERVER_BASE_URL_PATH", ""),
         "server_headless": True,
         "browser_gatherUsageStats": False,
     }
@@ -128,7 +134,8 @@ def main() -> int:
         ) from exc
 
     port = find_free_port()
-    url = f"http://127.0.0.1:{port}"
+    route = f"streamfetch-{secrets.token_hex(12)}"
+    url = f"http://127.0.0.1:{port}/{route}/"
     app_path = find_streamlit_app()
     if getattr(sys, "frozen", False):
         command = [sys.executable, "--streamfetch-server", str(port)]
@@ -141,11 +148,13 @@ def main() -> int:
             str(app_path),
             "--server.address=127.0.0.1",
             f"--server.port={port}",
+            f"--server.baseUrlPath={route}",
             "--server.headless=true",
             "--browser.gatherUsageStats=false",
         ]
     process = subprocess.Popen(
         command,
+        env={**os.environ, "STREAMLIT_SERVER_BASE_URL_PATH": route},
         stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
         start_new_session=os.name == "posix",

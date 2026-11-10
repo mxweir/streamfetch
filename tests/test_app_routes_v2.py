@@ -35,7 +35,9 @@ def app_context(tmp_path, monkeypatch, request):
     monkeypatch.setattr("streamfetch.engine_updates.ensure_engine", lambda: None)
     monkeypatch.setattr("streamfetch.engine_updates.engine_status", lambda: EngineStatus("test"))
     monkeypatch.setattr("streamfetch.system.run_health_checks", lambda *_: ())
-    monkeypatch.setattr("streamfetch.studio_ui.folder_watcher", lambda *_: None)
+    monkeypatch.setattr(
+        "streamfetch.studio_ui.folder_watcher", lambda *_: SimpleNamespace(roots=lambda: ())
+    )
     monkeypatch.setattr("streamfetch.subscriptions.SubscriptionService", lambda *_: object())
     monkeypatch.setattr(
         "streamfetch.studio_ui.sharing_service", lambda: SimpleNamespace(player=None)
@@ -99,7 +101,7 @@ def test_home_network_shortcut_targets_actual_studio_home_player(app_context):
     assert not submitted
 
 
-def test_global_search_bookmark_opens_library_and_seeks_exact_moment(app_context):
+def test_global_search_bookmark_stays_in_search_and_seeks_exact_moment(app_context):
     app, library, _, language, submitted = app_context
     app.radio(key="workspace").set_value("Search").run()
     assert not app.exception
@@ -107,7 +109,7 @@ def test_global_search_bookmark_opens_library_and_seeks_exact_moment(app_context
     assert not app.exception
     app.button(key="search-bookmark:1").click().run()
     assert not app.exception
-    assert app.session_state["workspace"] == "Library"
+    assert app.session_state["workspace"] == "Search"
     assert app.session_state["player_seek_request"]["seconds"] == 27.5
     assert app.session_state["player_seek_request"]["path"] == str(library.root / "existing.mp3")
     assert library.current_item().path.name == "existing.mp3"

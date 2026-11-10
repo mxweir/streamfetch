@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "streamfetch"
-version = "2.0.1"
+version = "3.0.0rc2"
 description = "A private media workspace: collect links, find moments and take curated media offline"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -23,6 +23,7 @@ dependencies = [
   "certifi>=2026.10.23",
   "brotli>=1.2.1,<2; implementation_name == 'cpython'",
   "cryptography>=46,<52",
+  "filelock>=3.16,<5",
   "qrcode>=8.2,<9",
   "mutagen>=1.47,<2",
   "packaging>=24,<27",
