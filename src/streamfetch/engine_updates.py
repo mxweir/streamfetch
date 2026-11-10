@@ -159,10 +159,11 @@ def _stage(release: dict, root: Path) -> Path:
             candidate = ejs_release if requirement.name == "yt-dlp-ejs" else certifi_release
             if candidate["info"]["version"] not in requirement.specifier:
                 raise ValueError("Incompatible engine dependency")
-        elif requirement.marker is None or "extra" not in str(requirement.marker):
-            # Other default extras are optional; new mandatory dependencies are not.
-            if importlib.metadata.version(requirement.name) not in requirement.specifier:
-                raise ValueError("Engine dependencies need a StreamFetch update")
+        # Other default extras are optional; new mandatory dependencies are not.
+        elif (requirement.marker is None or "extra" not in str(requirement.marker)) and (
+            importlib.metadata.version(requirement.name) not in requirement.specifier
+        ):
+            raise ValueError("Engine dependencies need a StreamFetch update")
     with tempfile.TemporaryDirectory(prefix="staging-", dir=root) as temporary:
         stage = Path(temporary)
         for package, candidate in (("yt-dlp", release), ("yt-dlp-ejs", ejs_release),

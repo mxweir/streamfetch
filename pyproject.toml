@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "streamfetch"
-version = "3.0.0rc1"
+version = "3.0.0rc2"
 description = "A private media workspace: collect links, find moments and take curated media offline"
 readme = "README.md"
 requires-python = ">=3.11"

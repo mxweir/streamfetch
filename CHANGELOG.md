@@ -4,6 +4,14 @@ Every StreamFetch release is documented with the same visual format: a short
 summary, an authentic product image, user-visible changes, upgrade notes, and
 verification details. Full visual notes live in [`docs/releases`](docs/releases).
 
+## [3.0.0rc2] — Desktop playback fix
+
+_[Visual release notes and verification](docs/releases/v3.0.0rc2.md)_
+
+![Local search and floating player in StreamFetch 3.0](docs/assets/releases/v3.0.0-rc.1/search-player.png)
+
+- Use the native server’s private URL prefix when loading media in the desktop player.
+
 ## [3.0.0rc1] — Find a moment and keep it playing
 
 _[Visual release notes and verification](docs/releases/v3.0.0rc1.md)_

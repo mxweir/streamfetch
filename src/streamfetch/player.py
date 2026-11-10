@@ -880,7 +880,9 @@ def media_url(item: MediaItem, coordinate: str, media_manager: Any | None = None
         from streamlit.runtime import get_instance
 
         media_manager = get_instance().media_file_mgr
-    return media_manager.add(str(item.path), media_mime_type(item), coordinate)
+    url = media_manager.add(str(item.path), media_mime_type(item), coordinate)
+    base = st.get_option("server.baseUrlPath").strip("/")
+    return f"/{base}{url}" if base and url.startswith("/media/") else url
 
 
 def build_player_data(
