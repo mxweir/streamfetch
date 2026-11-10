@@ -115,7 +115,10 @@ class Downloader:
                                        info.get("filepath")))
             if data.get("status") != "finished":
                 return
-            candidates = [info.get("filepath")]
+            filepath = info.get("filepath")
+            if filepath and data.get("postprocessor") == "MoveFiles" and info.get("__finaldir"):
+                filepath = Path(info["__finaldir"]) / Path(filepath).name
+            candidates = [filepath]
             candidates.extend(chapter.get("filepath") for chapter in info.get("chapters") or [])
             for value in candidates:
                 if not isinstance(value, (str, Path)):
@@ -143,7 +146,9 @@ class Downloader:
         finished_at = time.time()
         media_extensions = {".mp3", ".m4a", ".opus", ".flac", ".wav", ".mp4", ".mkv", ".webm"}
         files = tuple(sorted(path for path in owned_paths
-                             if path.is_file() and path.suffix.lower() in media_extensions))
+                             if path.is_file() and path.stat().st_size > 0
+                             and output_dir / ".streamfetch" not in path.parents
+                             and path.suffix.lower() in media_extensions))
         return DownloadResult(output_dir, files, started_at, finished_at)
 
 

@@ -6,6 +6,7 @@ import io
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -13,8 +14,11 @@ import time
 import zipfile
 from dataclasses import asdict, dataclass
 from enum import StrEnum
+from importlib.metadata import PackageNotFoundError, requires, version
 from pathlib import Path
 from typing import Any
+
+from packaging.requirements import Requirement
 
 from streamfetch import __version__
 
@@ -75,17 +79,33 @@ def run_health_checks(output_dir: Path) -> tuple[HealthCheck, ...]:
     guidance = dependency_guidance()
     ffmpeg = _command_version("ffmpeg", "-version")
     ffmpeg_detail = " ".join(ffmpeg.split()[:3]) if ffmpeg else None
-    runtimes = [
-        (name, _command_version(name, "--version"))
-        for name in ("node", "deno", "bun", "qjs")
-    ]
-    runtime = next(((name, version) for name, version in runtimes if version), None)
+    ffprobe = _command_version("ffprobe", "-version")
+    minimums = {"node": (22, 0, 0), "deno": (2, 3, 0), "qjs": (2023, 12, 9)}
+    runtime = None
+    for name, minimum in minimums.items():
+        installed = _command_version(name, "--help" if name == "qjs" else "--version")
+        match = re.search(r"\b(?:v)?(\d+)(?:[.-](\d+))?(?:[.-](\d+))?", installed or "")
+        if match and tuple(int(part or 0) for part in match.groups()) >= minimum:
+            runtime = (name, installed)
+            break
     try:
         import yt_dlp
 
         ytdlp_version = getattr(getattr(yt_dlp, "version", None), "__version__", "installed")
     except ImportError:
         ytdlp_version = None
+
+    ejs_version = None
+    ejs_compatible = False
+    try:
+        ejs_version = version("yt-dlp-ejs")
+        ejs_requirements = [Requirement(entry) for entry in requires("yt-dlp") or ()]
+        ejs_compatible = any(
+            entry.name == "yt-dlp-ejs" and entry.specifier.contains(ejs_version)
+            for entry in ejs_requirements
+        )
+    except PackageNotFoundError:
+        pass
 
     target = output_dir.expanduser()
     existing = target
@@ -105,6 +125,17 @@ def run_health_checks(output_dir: Path) -> tuple[HealthCheck, ...]:
             ffmpeg_detail or "Required for media conversion and merging.",
             "" if ffmpeg else guidance["ffmpeg"],
             required=True,
+        ),
+        HealthCheck(
+            "ffprobe", "ffprobe", HealthStatus.READY if ffprobe else HealthStatus.WARNING,
+            ffprobe or "Required to inspect audio and video files.",
+            "" if ffprobe else guidance["ffmpeg"],
+        ),
+        HealthCheck(
+            "ejs", "YouTube EJS",
+            HealthStatus.READY if ejs_compatible else HealthStatus.WARNING,
+            ejs_version or "The YouTube EJS package is missing.",
+            "" if ejs_compatible else "Refresh the download engine in System.",
         ),
         HealthCheck(
             "yt_dlp",
@@ -128,7 +159,8 @@ def run_health_checks(output_dir: Path) -> tuple[HealthCheck, ...]:
         HealthCheck(
             "storage",
             "Media folder",
-            HealthStatus.READY if writable else HealthStatus.MISSING,
+            HealthStatus.MISSING if not writable or not free_bytes else
+            HealthStatus.WARNING if free_bytes < 256 * 1024**2 else HealthStatus.READY,
             (
                 f"Writable · {free_bytes / (1024**3):.1f} GB available"
                 if writable

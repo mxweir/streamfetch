@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -71,6 +73,7 @@ def fetch_latest_release(timeout: float = 5) -> ReleaseInfo:
         {
             "name": str(asset.get("name", "")),
             "url": str(asset.get("browser_download_url", "")),
+            "digest": str(asset.get("digest") or ""),
         }
         for asset in payload.get("assets", ())
         if asset.get("browser_download_url")
@@ -280,26 +283,47 @@ def apply_update(
 
 def _download_packaged_asset(release: ReleaseInfo, state_dir: Path) -> Path:
     system = platform.system().lower()
-    marker = "macos" if system == "darwin" else "windows" if system == "windows" else "linux"
-    asset = next(
-        (asset for asset in release.assets if marker in asset["name"].lower()),
-        None,
-    )
+    machine = platform.machine().lower()
+    arch = {"aarch64": "arm64", "arm64": "arm64", "amd64": "x64", "x86_64": "x64"}.get(machine)
+    platform_asset = {"darwin": ("macos", "dmg"), "windows": ("windows", "exe"),
+                      "linux": ("linux", "tar.gz")}.get(system)
+    if platform_asset is None or arch is None:
+        raise RuntimeError("No desktop update is available for this platform.")
+    if not re.fullmatch(r"[0-9][a-zA-Z0-9.+-]*", release.version):
+        raise RuntimeError("Invalid desktop update version.")
+    marker, extension = platform_asset
+    name = f"StreamFetch-{marker}-{arch}.{extension}"
+    asset = next((entry for entry in release.assets if entry["name"] == name), None)
     if asset is None:
-        raise RuntimeError("No desktop update is available for this operating system yet.")
+        raise RuntimeError("No desktop update is available for this operating system and CPU.")
+    expected = asset.get("digest", "")
+    if not re.fullmatch(r"sha256:[a-fA-F0-9]{64}", expected):
+        raise RuntimeError("GitHub did not publish a valid checksum for this desktop update.")
+    url = f"https://github.com/{REPOSITORY}/releases/download/v{release.version}/{name}"
+    if asset["url"] != url:
+        raise RuntimeError("Unexpected desktop update download URL.")
     target_dir = state_dir / "updates" / f"v{release.version}"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / Path(asset["name"]).name
-    request = urllib.request.Request(asset["url"], headers={"User-Agent": "StreamFetch"})
+    target = target_dir / name
+    staged = None
     try:
-        with (
-            urllib.request.urlopen(request, timeout=60, context=verified_context()) as response,
-            target.open("wb") as output,
-        ):  # noqa: S310
-            shutil.copyfileobj(response, output)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        request = urllib.request.Request(url, headers={"User-Agent": "StreamFetch"})
+        with tempfile.NamedTemporaryFile(dir=target_dir, delete=False) as output:
+            staged = Path(output.name)
+            with urllib.request.urlopen(  # noqa: S310
+                request, timeout=60, context=verified_context()
+            ) as response:
+                shutil.copyfileobj(response, output)
+        with staged.open("rb") as downloaded:
+            actual = hashlib.file_digest(downloaded, "sha256").hexdigest()
+        if actual != expected[7:].lower():
+            raise RuntimeError("The desktop update checksum did not match. The file was discarded.")
+        staged.replace(target)
     except (OSError, urllib.error.URLError) as exc:
-        target.unlink(missing_ok=True)
         raise RuntimeError("The desktop update could not be downloaded.") from exc
+    finally:
+        if staged is not None:
+            staged.unlink(missing_ok=True)
     return target
 
 

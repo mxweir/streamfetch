@@ -4,6 +4,18 @@ Every StreamFetch release is documented with the same visual format: a short
 summary, an authentic product image, user-visible changes, upgrade notes, and
 verification details. Full visual notes live in [`docs/releases`](docs/releases).
 
+## [3.0.0rc1] — Find a moment and keep it playing
+
+_[Visual release notes and verification](docs/releases/v3.0.0rc1.md)_
+
+![Local search and floating player in StreamFetch 3.0 RC1](docs/assets/releases/v3.0.0-rc.1/search-player.png)
+
+- Keep favorites, playlists, bookmarks and positions when files go missing.
+- Search across watched folders and export excerpts from existing local media.
+- Keep the floating player available across all workspaces.
+- Verify and restore a library backup in a separate folder, with optional originals.
+- Use the home player in German or English. Verify desktop update artifacts before opening them.
+
 ## [2.0.1] — Verified desktop updates
 
 _Released 2026-10-28 · [Visual release notes](docs/releases/v2.0.1.md)_

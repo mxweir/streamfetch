@@ -146,7 +146,7 @@ def test_playlists_and_history(library):
     assert library.playlists() == ()
 
 
-def test_missing_media_cascades_through_collections(library):
+def test_missing_media_retains_collection_data_and_relinks(library):
     track = library.root / "temporary.mp3"
     track.write_bytes(b"temporary")
     library.scan()
@@ -157,7 +157,10 @@ def test_missing_media_cascades_through_collections(library):
     library.record_play(track)
     library.set_current_item(track)
 
-    track.unlink()
+    original = library.current_item()
+    library.set_playback_position(track, 12)
+    renamed = track.with_name("renamed.mp3")
+    track.rename(renamed)
     library.scan()
 
     assert library.favorite_items() == ()
@@ -165,6 +168,14 @@ def test_missing_media_cascades_through_collections(library):
     assert library.playlist_items(playlist.id) == ()
     assert library.history() == ()
     assert library.current_item() is None
+    assert library.missing_items() == (original,)
+    library.relink(track, renamed)
+    assert library.current_item().media_id == original.media_id
+    assert library.playback_position(renamed) == 12
+    assert library.favorite_items()[0].path == renamed
+    assert library.queue()[0].item.path == renamed
+    assert library.history()[0].item.path == renamed
+    assert library.playlist_items(playlist.id)[0].path == renamed
 
 
 def test_smart_queue_supports_play_next_reorder_shuffle_and_replace(library):

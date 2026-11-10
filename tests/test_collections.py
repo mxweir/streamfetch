@@ -178,7 +178,10 @@ def test_symlink_directory_escape_is_rejected(collection, tmp_path):
     linked.symlink_to(outside, target_is_directory=True)
     with collection.library._connection() as connection:
         connection.execute(
-            "INSERT INTO media_items SELECT 'linked/private.mp3', title, artist, album, "
+            "INSERT INTO media_items (path, title, artist, album, duration_seconds, size_bytes, "
+            "media_type, format, modified_at, added_at, cover_path, source_url, custom_title, "
+            "custom_artist, custom_album, rating, tags_json) "
+            "SELECT 'linked/private.mp3', title, artist, album, "
             "duration_seconds, size_bytes, media_type, format, modified_at, added_at, "
             "cover_path, source_url, custom_title, custom_artist, custom_album, rating, tags_json "
             "FROM media_items WHERE path = 'one.mp3'"

@@ -6,6 +6,7 @@ import html
 import importlib.util
 import math
 import re
+import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -66,6 +67,43 @@ class TranscriptStore:
                 );
                 CREATE INDEX IF NOT EXISTS transcript_path ON transcript_segments(path,start);
             """)
+
+            self._ensure_search_index(db)
+
+    @staticmethod
+    def _ensure_search_index(db):
+        # Older platform SQLite builds may not provide FTS5 with the trigram tokenizer.
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='transcript_search'").fetchone():
+            return
+        try:
+            db.executescript("""
+                BEGIN IMMEDIATE;
+                CREATE VIRTUAL TABLE IF NOT EXISTS transcript_search USING fts5(
+                    text, content='transcript_segments', content_rowid='id', tokenize='trigram'
+                );
+                CREATE TRIGGER IF NOT EXISTS transcript_search_insert
+                AFTER INSERT ON transcript_segments BEGIN
+                    INSERT INTO transcript_search(rowid,text) VALUES(new.id,new.text);
+                END;
+                CREATE TRIGGER IF NOT EXISTS transcript_search_delete
+                AFTER DELETE ON transcript_segments BEGIN
+                    INSERT INTO transcript_search(transcript_search,rowid,text)
+                    VALUES('delete',old.id,old.text);
+                END;
+                CREATE TRIGGER IF NOT EXISTS transcript_search_update
+                AFTER UPDATE OF text ON transcript_segments BEGIN
+                    INSERT INTO transcript_search(transcript_search,rowid,text)
+                    VALUES('delete',old.id,old.text);
+                    INSERT INTO transcript_search(rowid,text) VALUES(new.id,new.text);
+                END;
+                INSERT INTO transcript_search(transcript_search) VALUES('rebuild');
+                COMMIT;
+            """)
+        except sqlite3.OperationalError as exc:
+            if db.in_transaction:
+                db.rollback()
+            if "no such module" not in str(exc) and "no such tokenizer" not in str(exc):
+                raise
 
     def status(self, path):
         with self.library._connection() as db:

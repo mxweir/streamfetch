@@ -13,9 +13,15 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from filelock import FileLock, Timeout
+
 from streamfetch.download_errors import classify_download_error
 from streamfetch.downloader import Downloader
 from streamfetch.models import DownloadRequest, DownloadResult, MediaType, ProgressEvent
+
+
+class WorkspaceInUse(RuntimeError):
+    """The durable download journal already has a writer."""
 
 
 class JobStatus(StrEnum):
@@ -86,17 +92,51 @@ class DownloadJobManager:
         self._last_persisted_at = 0.0
         self._retry_delays = retry_delays
         self._closed = False
-        self._load()
+        self._journal_lock = None
+        if self._state_path is not None:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            self._journal_lock = FileLock(str(self._state_path) + ".lock", thread_local=False)
+            try:
+                self._journal_lock.acquire(timeout=0)
+            except Timeout as exc:
+                raise WorkspaceInUse(
+                    "Another StreamFetch process has this workspace open."
+                ) from exc
+        try:
+            self._load()
+        except BaseException:
+            if self._journal_lock is not None:
+                self._journal_lock.release()
+            raise
 
     def submit(self, request: DownloadRequest) -> tuple[str, ...]:
         job_ids = []
         for url in request.urls:
-            job = _DownloadJob(uuid.uuid4().hex[:12], replace(request, urls=(url,)))
+            job = _DownloadJob(uuid.uuid4().hex[:12], replace(
+                request, urls=(url,), output_dir=request.output_dir.expanduser().resolve()
+            ))
             with self._lock:
+                if self._closed:
+                    raise RuntimeError("This download manager has stopped.")
+                duplicate = next(
+                    (existing for existing in self._jobs.values()
+                     if existing.status in {
+                         JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.PAUSING, JobStatus.PAUSED,
+                     }
+                     and existing.request == job.request),
+                    None,
+                )
+                if duplicate is not None:
+                    job_ids.append(duplicate.id)
+                    continue
                 self._jobs[job.id] = job
-                self._persist_locked()
+                try:
+                    self._persist_locked()
+                except OSError:
+                    del self._jobs[job.id]
+                    raise
                 job.future = self._executor.submit(self._run, job.id)
-            job_ids.append(job.id)
+                job_ids.append(job.id)
         return tuple(job_ids)
 
     def pause(self, job_id: str) -> None:
@@ -179,9 +219,16 @@ class DownloadJobManager:
 
     def shutdown(self) -> None:
         with self._lock:
+            if self._closed:
+                return
             self._closed = True
-            self._persist_locked()
-        self._executor.shutdown(wait=False, cancel_futures=True)
+        try:
+            self._executor.shutdown(wait=True, cancel_futures=True)
+            with self._lock:
+                self._persist_locked()
+        finally:
+            if self._journal_lock is not None:
+                self._journal_lock.release()
 
     def _run(self, job_id: str) -> None:
         with self._lock:

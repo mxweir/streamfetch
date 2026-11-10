@@ -68,7 +68,7 @@ def test_invalid_smart_rules(library, rules):
         ListeningLibrary(library).save_smart(**rules)
 
 
-def test_bookmarks_persist_and_cascade(library):
+def test_bookmarks_persist_when_media_is_missing(library):
     item = library.list_items()[0]
     store = ListeningLibrary(library)
     store.add_bookmark(item.path, 1.25, "The useful part")
@@ -81,7 +81,7 @@ def test_bookmarks_persist_and_cascade(library):
     store.add_bookmark(item.path, 0, "Start")
     item.path.unlink()
     library.scan()
-    assert not store.bookmarks(item.path)
+    assert store.bookmarks(item.path)[0]["label"] == "Start"
 
 
 def test_watched_folders_index_without_copying(library, tmp_path):

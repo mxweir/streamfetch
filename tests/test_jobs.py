@@ -3,7 +3,9 @@ import threading
 from dataclasses import replace
 from pathlib import Path
 
-from streamfetch.jobs import DownloadJobManager, JobStatus
+import pytest
+
+from streamfetch.jobs import DownloadJobManager, JobStatus, WorkspaceInUse
 from streamfetch.models import DownloadRequest, DownloadResult, MediaType, ProgressEvent
 
 
@@ -180,3 +182,30 @@ def test_failed_job_retries_automatically_with_backoff(tmp_path):
     assert snapshot.status is JobStatus.COMPLETED
     assert FlakyDownloader.calls == 2
     manager.shutdown()
+
+def test_one_writer_per_journal_and_duplicate_submissions(tmp_path):
+    started, finish = threading.Event(), threading.Event()
+
+    class WaitingDownloader:
+        def download(self, request, callback):
+            started.set()
+            assert finish.wait(5)
+            return DownloadResult(request.output_dir, (), 1.0, 2.0)
+
+    journal = tmp_path / "jobs.json"
+    manager = DownloadJobManager(downloader_factory=WaitingDownloader, state_path=journal)
+    single = replace(request(tmp_path), urls=("https://youtu.be/one",))
+    try:
+        first = manager.submit(single)
+        assert started.wait(5)
+        assert manager.submit(single) == first
+        with pytest.raises(WorkspaceInUse):
+            DownloadJobManager(state_path=journal)
+    finally:
+        finish.set()
+        manager.shutdown()
+    restored = DownloadJobManager(state_path=journal)
+    try:
+        assert len(restored.snapshots()) == 1
+    finally:
+        restored.shutdown()
