@@ -81,7 +81,7 @@ and the remaining requirements for a stable release.
 
 [3.0 RC2 release notes](docs/releases/v3.0.0rc2.md) · [3.0 roadmap](docs/ROADMAP-3.0.md)
 
-![Local search and the floating player in StreamFetch 3.0 RC2](docs/assets/releases/v3.0.0-rc.1/search-player.png)
+![Local search and the floating player in StreamFetch 3.0 RC2](docs/assets/releases/v3.0.0-rc.2/search-player.png)
 
 ### A complete media workflow — New in 2.0
 

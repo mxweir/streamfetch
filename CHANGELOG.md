@@ -8,7 +8,7 @@ verification details. Full visual notes live in [`docs/releases`](docs/releases)
 
 _[Visual release notes and verification](docs/releases/v3.0.0rc2.md)_
 
-![Local search and floating player in StreamFetch 3.0](docs/assets/releases/v3.0.0-rc.1/search-player.png)
+![Local search and floating player in StreamFetch 3.0](docs/assets/releases/v3.0.0-rc.2/search-player.png)
 
 - Use the native server’s private URL prefix when loading media in the desktop player.
 
